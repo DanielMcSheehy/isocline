@@ -11,7 +11,20 @@ core, compiled to a 240 KB (88 KB gzipped) WASM module with a zero-dependency
 TypeScript wrapper, an [Observable Plot](https://github.com/observablehq/plot)
 visualization layer, and an interactive demo.
 
-**[Architecture diagram, live](https://www.eternalchaos.xyz/isocline/)** ([local copy](docs/architecture.html)) · **[Screenshot showcase](docs/SHOWCASE.md)**
+**[Architecture diagram, live](https://www.eternalchaos.xyz/isocline/)** ([local copy](docs/architecture.html)) · **[Full showcase](docs/SHOWCASE.md)**
+
+<p align="center">
+  <a href="docs/SHOWCASE.md#forecast"><img src="docs/screenshots/forecast-paths.png" alt="forecast with 200-path bootstrap simulation" width="416"></a>
+  <a href="docs/SHOWCASE.md#anomaly-detection"><img src="docs/screenshots/anomalies.png" alt="anomaly detection with ground-truth scoring" width="416"></a>
+  <br>
+  <a href="docs/SHOWCASE.md#seasonality"><img src="docs/screenshots/seasonality.png" alt="ACF and periodogram seasonality detection" width="416"></a>
+  <a href="docs/SHOWCASE.md#backtest"><img src="docs/screenshots/backtest.png" alt="rolling-origin backtest leaderboard" width="416"></a>
+  <br>
+  <a href="docs/SHOWCASE.md#benchmarks"><img src="docs/screenshots/benchmark.png" alt="in-browser benchmarks: 8 ms at n=1k, 252 ms at n=50k" width="416"></a>
+  <a href="https://www.eternalchaos.xyz/isocline/"><img src="docs/screenshots/architecture.png" alt="interactive architecture diagram" width="416"></a>
+</p>
+
+All screenshots are the real app running the real wasm engine in-browser.
 
 ```
 rust core ──► wasm (flat C ABI) ──► TS engine ──► isocline-plot ──► demo
