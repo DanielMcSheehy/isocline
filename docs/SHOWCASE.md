@@ -78,3 +78,11 @@ seasonal-naive baseline for reference.
 | decompose | 10,000 | 52 ms |
 | seasonality | 10,000 | 14 ms |
 | snaive in plain JS (reference) | 50,000 | 4.4 ms |
+
+## Auto-chart
+
+Hand it generic columns (`y`, `y2`, `categories`) and it picks the right
+analysis and explains itself. Here: 12 devices' error counts, one device
+flagged outside the fleet's IQR fences.
+
+![auto-chart dispatching to category_outlier](screenshots/autochart.png)
