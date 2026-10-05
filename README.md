@@ -11,6 +11,8 @@ core, compiled to a 240 KB (88 KB gzipped) WASM module with a zero-dependency
 TypeScript wrapper, an [Observable Plot](https://github.com/observablehq/plot)
 visualization layer, and an interactive demo.
 
+**[Architecture diagram](docs/architecture.html)** · **[Screenshot showcase](docs/SHOWCASE.md)**
+
 ```
 rust core ──► wasm (flat C ABI) ──► TS engine ──► isocline-plot ──► demo
   ▲                                 │
