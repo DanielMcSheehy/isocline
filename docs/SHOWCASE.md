@@ -2,8 +2,8 @@
 
 The product, in pictures. Every screenshot below is the real app running the
 real wasm engine in-browser (engine pill says `wasm`, badges are measured at
-runtime). Architecture diagram: [docs/architecture.html](architecture.html)
-(also live on GitHub Pages).
+runtime). Architecture diagram: [live on GitHub Pages](https://www.eternalchaos.xyz/isocline/)
+([local copy](architecture.html)).
 
 ## Architecture
 
