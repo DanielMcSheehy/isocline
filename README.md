@@ -43,6 +43,8 @@ rust core ──► wasm (flat C ABI) ──► TS engine ──► isocline-plo
 | Decomposition | Robust STL-style (bisquare outer loop, out-of-sample LOESS) |
 | Changepoints | Binary segmentation on mean shifts |
 | Evaluation | Rolling-origin backtesting w/ PI coverage, rmse/mae/smape |
+| Tabular (non-temporal) | Pearson correlation, categorical majority, IQR category-outlier vs peers, low-variance flatness |
+| Auto-chart | Give it generic columns (`y`, `y2`, `categories`) - it picks the right analysis and explains why |
 
 ## Measured performance (wasm, single thread, M-series laptop)
 
@@ -93,6 +95,15 @@ const engine = await loadIsocline();
 const fc = engine.forecast({ y, t }, { model: "auto", horizon: 48 });   // → stl_ets
 const an = engine.detectAnomalies({ y, t });                           // → flagged spikes/dips
 const bt = engine.backtest({ y, t }, { models: ["stl_ets", "ets", "ar", "snaive"] });
+
+// non-temporal: two measures, categorical dominance, fleet outliers, flatness
+const corr = engine.correlation(voltage, current);                     // → { r, significant, slope, ... }
+const maj = engine.majority(failureModes);                             // → dominant + proportions
+const fleet = engine.categoryOutlier(devices, errorCounts);            // → IQR fences, flagged devices
+const flat = engine.lowVariance(throughput);                           // → { cv, isFlat }
+
+// or just hand it whatever columns you have and ask for the chart
+const auto = engine.autoChart({ categories: devices, y: errorCounts }); // → kind + reason + result
 
 document.body.append(
   PP.forecastPlot({ y, t }, fc, { paths: true, showComponents: true }),

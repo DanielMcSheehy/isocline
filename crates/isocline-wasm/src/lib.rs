@@ -161,6 +161,33 @@ fn dispatch(op: i32, cfg: &[u8], y: &[f64]) -> (i32, String) {
     }
 }
 
+/// Two-array variant for tabular ops (CONTRACT §11): op 7 correlation,
+/// 8 majority, 9 category_outlier, 10 low_variance. Same arena protocol.
+#[no_mangle]
+pub extern "C" fn call2(op: i32, cfg_ptr: i32, cfg_len: i32, y_ptr: i32, y_len: i32, y2_ptr: i32, y2_len: i32) -> i32 {
+    // SAFETY: caller allocated both arrays before invoking; copy out first.
+    let cfg: Vec<u8> = unsafe { slice::from_raw_parts(cfg_ptr as *const u8, cfg_len.max(0) as usize).to_vec() };
+    let y: Vec<f64> = unsafe { slice::from_raw_parts(y_ptr as *const f64, y_len.max(0) as usize).to_vec() };
+    let y2: Vec<f64> = unsafe { slice::from_raw_parts(y2_ptr as *const f64, y2_len.max(0) as usize).to_vec() };
+
+    ARENA.with(|a| a.borrow_mut().reset());
+    RESULT.with(|r| r.borrow_mut().channels.clear());
+
+    let (status, json) = dispatch2(op, &cfg, &y, &y2);
+    RESULT.with(|r| r.borrow_mut().json = json.into_bytes());
+    status
+}
+
+fn dispatch2(op: i32, cfg: &[u8], y: &[f64], y2: &[f64]) -> (i32, String) {
+    match op {
+        7 => api::correlation(cfg, y, y2),
+        8 => api::majority(cfg, y),
+        9 => api::category_outlier(cfg, y, y2),
+        10 => api::low_variance(cfg, y),
+        _ => (ERR_BAD_OP, err_json("badOp", "unknown op code")),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // op mapping (single reconciliation point against isocline-core's API)
 // ---------------------------------------------------------------------------
@@ -619,5 +646,167 @@ mod api {
         let ch = chans(vec![("y", filled)]);
         let header = json!({ "ok": true, "channels": chans_json(&ch) });
         (0, header.to_string())
+    }
+
+    // -- ops 7-10: tabular detectors (CONTRACT §11) -----------------------------
+
+    fn legend_labels(cfg_legend: &Option<Vec<String>>, codes: &[f64]) -> Result<Vec<String>, String> {
+        let legend = cfg_legend.as_ref().ok_or("bad config: legend required")?;
+        let mut out = Vec::with_capacity(codes.len());
+        for &c in codes {
+            let idx = if c.is_finite() && c >= 0.0 && c.fract() == 0.0 { c as usize } else { usize::MAX };
+            let label = legend.get(idx).ok_or("bad params: category code out of legend range")?;
+            out.push(label.clone());
+        }
+        Ok(out)
+    }
+
+    #[derive(Deserialize, Default)]
+    #[serde(deny_unknown_fields)]
+    struct CorrelationCfg {}
+
+    pub fn correlation(_cfg: &[u8], a: &[f64], b: &[f64]) -> (i32, String) {
+        if let Err(e) = parse::<CorrelationCfg>(_cfg) {
+            return (ERR_BAD_CONFIG, err_json("badConfig", &e));
+        }
+        match core::tabular::correlation(a, b) {
+            Ok(r) => {
+                let header = json!({
+                    "ok": true,
+                    "n": r.n,
+                    "r": r.r,
+                    "t_stat": r.t_stat,
+                    "significant": r.significant,
+                    "slope": r.slope,
+                    "intercept": r.intercept,
+                });
+                (0, header.to_string())
+            }
+            Err(e) => err(&e),
+        }
+    }
+
+    #[derive(Deserialize, Default)]
+    #[serde(deny_unknown_fields)]
+    struct MajorityCfg {
+        threshold: Option<f64>,
+        legend: Option<Vec<String>>,
+    }
+
+    pub fn majority(cfg: &[u8], codes: &[f64]) -> (i32, String) {
+        let c: MajorityCfg = match parse(cfg) {
+            Ok(c) => c,
+            Err(e) => return (ERR_BAD_CONFIG, err_json("badConfig", &e)),
+        };
+        let labels = match legend_labels(&c.legend, codes) {
+            Ok(l) => l,
+            Err(e) => return (ERR_BAD_PARAMS, err_json("badParams", &e)),
+        };
+        let r = core::tabular::majority(&labels, c.threshold.unwrap_or(0.5));
+        let counts: Vec<serde_json::Value> = r
+            .counts
+            .iter()
+            .map(|m| json!({ "label": m.label, "count": m.count, "proportion": m.proportion }))
+            .collect();
+        let header = json!({
+            "ok": true,
+            "n": r.n,
+            "threshold": r.threshold,
+            "dominant": r.dominant,
+            "dominant_proportion": r.dominant_proportion,
+            "is_majority": r.is_majority,
+            "counts": counts,
+        });
+        (0, header.to_string())
+    }
+
+    #[derive(Deserialize, Default)]
+    #[serde(deny_unknown_fields)]
+    struct CategoryOutlierCfg {
+        agg: Option<String>,
+        factor: Option<f64>,
+        legend: Option<Vec<String>>,
+    }
+
+    pub fn category_outlier(cfg: &[u8], codes: &[f64], values: &[f64]) -> (i32, String) {
+        let c: CategoryOutlierCfg = match parse(cfg) {
+            Ok(c) => c,
+            Err(e) => return (ERR_BAD_CONFIG, err_json("badConfig", &e)),
+        };
+        let agg = match c.agg.as_deref() {
+            None | Some("sum") => core::tabular::CategoryAgg::Sum,
+            Some("mean") => core::tabular::CategoryAgg::Mean,
+            Some("count") => core::tabular::CategoryAgg::Count,
+            Some("median") => core::tabular::CategoryAgg::Median,
+            Some(other) => return (ERR_BAD_PARAMS, err_json("badParams", &format!("unknown agg {other}"))),
+        };
+        let labels = match legend_labels(&c.legend, codes) {
+            Ok(l) => l,
+            Err(e) => return (ERR_BAD_PARAMS, err_json("badParams", &e)),
+        };
+        match core::tabular::category_outlier(&labels, values, agg, c.factor.unwrap_or(1.5)) {
+            Ok(r) => {
+                let cats: Vec<serde_json::Value> = r
+                    .categories
+                    .iter()
+                    .map(|p| {
+                        json!({
+                            "label": p.label,
+                            "value": p.value,
+                            "is_outlier": p.is_outlier,
+                            "direction": if p.direction == core::tabular::CategoryDirection::High { "high" } else { "low" },
+                        })
+                    })
+                    .collect();
+                let header = json!({
+                    "ok": true,
+                    "agg": match r.agg {
+                        core::tabular::CategoryAgg::Sum => "sum",
+                        core::tabular::CategoryAgg::Mean => "mean",
+                        core::tabular::CategoryAgg::Count => "count",
+                        core::tabular::CategoryAgg::Median => "median",
+                    },
+                    "factor": r.factor,
+                    "q1": r.q1,
+                    "q3": r.q3,
+                    "iqr": r.iqr,
+                    "lower_fence": r.lower_fence,
+                    "upper_fence": r.upper_fence,
+                    "outlier_count": r.outlier_count,
+                    "categories": cats,
+                });
+                (0, header.to_string())
+            }
+            Err(e) => err(&e),
+        }
+    }
+
+    #[derive(Deserialize, Default)]
+    #[serde(deny_unknown_fields)]
+    struct LowVarianceCfg {
+        max_cv: Option<f64>,
+    }
+
+    pub fn low_variance(cfg: &[u8], values: &[f64]) -> (i32, String) {
+        let c: LowVarianceCfg = match parse(cfg) {
+            Ok(c) => c,
+            Err(e) => return (ERR_BAD_CONFIG, err_json("badConfig", &e)),
+        };
+        match core::tabular::low_variance(values, c.max_cv.unwrap_or(0.01)) {
+            Ok(r) => {
+                let header = json!({
+                    "ok": true,
+                    "n": r.n,
+                    "mean": r.mean,
+                    "variance": r.variance,
+                    "std_dev": r.std_dev,
+                    "cv": r.cv,
+                    "max_cv": r.max_cv,
+                    "is_flat": r.is_flat,
+                });
+                (0, header.to_string())
+            }
+            Err(e) => err(&e),
+        }
     }
 }

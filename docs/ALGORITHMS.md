@@ -323,3 +323,46 @@ to outliers.
 - Always sanity-check against `snaive`: if a model cannot beat it in
   `backtest`, do not ship it. The test gates enforce exactly that for
   `stl_ets` on trending seasonal data.
+
+## Tabular (non-temporal) detectors
+
+These operate on generic columns — no time ordering assumed (CONTRACT §11).
+
+### Pearson correlation
+
+Two-pass, numerically stable covariance/variance:
+
+```
+r = Σ(aᵢ−ā)(bᵢ−b̄) / √(Σ(aᵢ−ā)² · Σ(bᵢ−b̄)²)
+t = r · √((n−2)/(1−r²))          significance: |t| > 2
+```
+
+Zero variance in either side (relative guard `sₓₓ ≤ 1e-12·Σa²`) returns
+`r = null`. `slope`/`intercept` come from OLS of b on a.
+
+### Categorical majority
+
+Counts per distinct label; `dominant` = argmax count; `is_majority` when
+`dominant_proportion ≥ threshold` (default 0.5). Ties break by label ascending.
+
+### Category outlier (fleet-style, IQR)
+
+Aggregate the numeric column per category (`sum`/`mean`/`count`/`median`),
+then treat the category aggregates as the sample: quartiles via type-7
+quantile, fences `Q1 − k·IQR` and `Q3 + k·IQR` (k = 1.5 default). A category
+outside the fences is flagged `high` or `low`. This is the non-temporal
+sibling of the time-series IQR detector: "does one device's error count sit
+outside the fleet's spread?"
+
+### Low variance (flatness)
+
+Population variance; `cv = σ/|μ|`. `is_flat` when `cv ≤ max_cv` (default
+0.01). Near-zero mean (|μ| < 1e-12) falls back to an absolute check
+`σ < 1e-9` so scaled-constant series stay classifiable.
+
+### Auto-chart dispatch
+
+Deterministic and explainable: categories+y → category outlier, else majority,
+else distribution; y+y2 → correlation; y alone → flatness check, then the
+time-series pipeline (seasonality strength ≥ 0.2 → forecast + anomalies,
+else anomaly screening). Every result carries a human-readable `reason`.

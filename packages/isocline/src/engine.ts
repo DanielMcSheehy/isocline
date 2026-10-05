@@ -4,16 +4,24 @@ import {
   IsoclineError,
   type AnomalyOptions,
   type AnomalyResult,
+  type AutoChartOptions,
+  type AutoChartResult,
   type BacktestOptions,
   type BacktestResult,
+  type CategoryAgg,
+  type CategoryOutlierResult,
   type ChangepointOptions,
   type ChangepointResult,
+  type CorrelationResult,
   type DecomposeOptions,
   type DecomposeResult,
   type ForecastOptions,
   type ForecastResult,
+  type GenericSeries,
   type InterpolateOptions,
   type Isocline,
+  type LowVarianceResult,
+  type MajorityResult,
   type Metrics,
   type ModelKind,
   type SeasonalityOptions,
@@ -190,6 +198,176 @@ export class WasmIsocline implements Isocline {
     const h = this.abi.call(OP.interpolate, "{}", series.y);
     return this.abi.channel(h, "y");
   }
+
+  // --- v1.1 tabular detectors (CONTRACT §11) ---
+
+  correlation(a: ArrayLike<number>, b: ArrayLike<number>): CorrelationResult {
+    const h = this.abi.call2(OP.correlation, "{}", a, b);
+    return {
+      n: num(h.n, 0),
+      r: finiteOrNull(h.r),
+      tStat: finiteOrNull(h.t_stat),
+      significant: h.significant === true,
+      slope: num(h.slope, 0),
+      intercept: num(h.intercept, 0),
+    };
+  }
+
+  majority(categories: ReadonlyArray<string>, opts: { threshold?: number } = {}): MajorityResult {
+    const { codes, legend } = factorize(categories);
+    const cfg = JSON.stringify({ threshold: opts.threshold ?? null, legend });
+    const h = this.abi.call2(OP.majority, cfg, codes);
+    const counts = Array.isArray(h.counts) ? (h.counts as Record<string, unknown>[]) : [];
+    return {
+      n: num(h.n, 0),
+      threshold: num(h.threshold, 0.5),
+      dominant: typeof h.dominant === "string" ? h.dominant : null,
+      dominantProportion: num(h.dominant_proportion, 0),
+      isMajority: h.is_majority === true,
+      counts: counts.map((c) => ({
+        label: String(c.label ?? "?"),
+        count: num(c.count, 0),
+        proportion: num(c.proportion, 0),
+      })),
+    };
+  }
+
+  categoryOutlier(
+    categories: ReadonlyArray<string>,
+    values: ArrayLike<number>,
+    opts: { agg?: CategoryAgg; factor?: number } = {},
+  ): CategoryOutlierResult {
+    const { codes, legend } = factorize(categories);
+    if (values.length !== categories.length) {
+      throw new IsoclineError("categoryOutlier: categories and values must be equal length", "badParams");
+    }
+    const cfg = JSON.stringify({ agg: opts.agg ?? null, factor: opts.factor ?? null, legend });
+    const h = this.abi.call2(OP.categoryOutlier, cfg, codes, values);
+    const cats = Array.isArray(h.categories) ? (h.categories as Record<string, unknown>[]) : [];
+    return {
+      agg: (h.agg as CategoryAgg) ?? "sum",
+      factor: num(h.factor, 1.5),
+      q1: num(h.q1, NaN),
+      q3: num(h.q3, NaN),
+      iqr: num(h.iqr, NaN),
+      lowerFence: num(h.lower_fence, NaN),
+      upperFence: num(h.upper_fence, NaN),
+      outlierCount: num(h.outlier_count, 0),
+      categories: cats.map((c) => ({
+        label: String(c.label ?? "?"),
+        value: num(c.value, NaN),
+        isOutlier: c.is_outlier === true,
+        direction: c.direction === "low" ? "low" : "high",
+      })),
+    };
+  }
+
+  lowVariance(values: ArrayLike<number>, opts: { maxCv?: number } = {}): LowVarianceResult {
+    const cfg = JSON.stringify({ max_cv: opts.maxCv ?? null });
+    const h = this.abi.call2(OP.lowVariance, cfg, values);
+    return {
+      n: num(h.n, 0),
+      mean: num(h.mean, NaN),
+      variance: num(h.variance, NaN),
+      stdDev: num(h.std_dev, NaN),
+      cv: num(h.cv, NaN),
+      maxCv: num(h.max_cv, 0.01),
+      isFlat: h.is_flat === true,
+    };
+  }
+
+  autoChart(input: GenericSeries, opts: AutoChartOptions = {}): AutoChartResult {
+    const cats = input.categories;
+    const y = input.y;
+    const y2 = input.y2;
+
+    if (cats && cats.length > 0 && y && y.length === cats.length) {
+      const co = this.categoryOutlier(cats, y);
+      if (co.outlierCount > 0) {
+        const names = co.categories.filter((c) => c.isOutlier).map((c) => c.label).slice(0, 3).join(", ");
+        return {
+          kind: "category_outlier",
+          reason: `${co.outlierCount} of ${co.categories.length} categories sit outside the IQR fences by ${co.agg} (${names})`,
+          categoryOutlier: co,
+        };
+      }
+      const mj = this.majority(cats, { threshold: opts.majorityThreshold ?? 0.5 });
+      if (mj.isMajority && mj.dominant) {
+        return {
+          kind: "majority",
+          reason: `"${mj.dominant}" dominates: ${(mj.dominantProportion * 100).toFixed(1)}% of ${mj.n} events (threshold ${(mj.threshold * 100).toFixed(0)}%)`,
+          majority: mj,
+        };
+      }
+      return {
+        kind: "distribution",
+        reason: "no IQR outliers and no dominant category - showing the per-category distribution",
+        categoryOutlier: co,
+      };
+    }
+
+    if (cats && cats.length > 0 && !y) {
+      const mj = this.majority(cats, { threshold: opts.majorityThreshold ?? 0.5 });
+      if (mj.isMajority && mj.dominant) {
+        return {
+          kind: "majority",
+          reason: `"${mj.dominant}" dominates: ${(mj.dominantProportion * 100).toFixed(1)}% of ${mj.n} events`,
+          majority: mj,
+        };
+      }
+      return { kind: "distribution", reason: "categorical column with no majority - showing counts", majority: mj };
+    }
+
+    if (y && y2 && y.length === y2.length && y.length >= 3) {
+      const c = this.correlation(y, y2);
+      return {
+        kind: "correlation",
+        reason: c.significant && c.r !== null
+          ? `two numeric measures correlate: Pearson r = ${c.r.toFixed(2)} over n = ${c.n}`
+          : "two numeric measures, no significant correlation - scatter",
+        correlation: c,
+      };
+    }
+
+    if (y && y.length >= 3) {
+      let yy = Array.from(y as ArrayLike<number>);
+      if (yy.some((v) => !Number.isFinite(v))) {
+        yy = Array.from(this.interpolate({ y: yy }));
+      }
+      const lv = this.lowVariance(yy);
+      if (lv.isFlat) {
+        return {
+          kind: "low_variance",
+          reason: `measure is essentially flat: cv ${lv.cv.toExponential(1)} <= ${lv.maxCv}`,
+          lowVariance: lv,
+        };
+      }
+      const series: SeriesInput = {
+        y: yy,
+        ...(input.t ? { t: Array.from(input.t as ArrayLike<number>) } : {}),
+      };
+      const an = this.detectAnomalies(series);
+      const s = this.seasonality(series);
+      const fc = this.forecast(series, { horizon: opts.forecastHorizon ?? 48 });
+      if (s.strength >= 0.2) {
+        return {
+          kind: "forecast",
+          reason: `seasonality detected (period ${s.bestPeriod}, strength ${s.strength.toFixed(2)}) - forecasting with ${fc.model}`,
+          forecast: fc,
+          anomalies: an,
+          series,
+        };
+      }
+      return {
+        kind: "anomalies",
+        reason: `no seasonal structure (strength ${s.strength.toFixed(2)}) - screening for anomalies: ${an.anomalies.length} flagged`,
+        anomalies: an,
+        series,
+      };
+    }
+
+    throw new IsoclineError("autoChart: provide y (time series), y+y2 (two measures), or categories(+y)", "badParams");
+  }
 }
 
 /** Load the engine. Pass explicit bytes, or let it fetch the sibling wasm asset. */
@@ -204,3 +382,21 @@ export async function loadIsocline(wasmBytes?: ArrayBuffer | Uint8Array): Promis
 
 // re-export helpers used by tests
 export { asF64, cleanArray };
+
+/** Factorize a string column into u32-safe f64 codes + distinct legend. */
+function factorize(categories: ReadonlyArray<string>): { codes: Float64Array; legend: string[] } {
+  const map = new Map<string, number>();
+  const legend: string[] = [];
+  const codes = new Float64Array(categories.length);
+  for (let i = 0; i < categories.length; i++) {
+    const c = categories[i] ?? "";
+    let idx = map.get(c);
+    if (idx === undefined) {
+      idx = legend.length;
+      legend.push(c);
+      map.set(c, idx);
+    }
+    codes[i] = idx;
+  }
+  return { codes, legend };
+}

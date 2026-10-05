@@ -105,6 +105,44 @@ ok("engine version", eq(engine.version, "0.1.0"));
   try { engine.forecast(series, { horizon: -5 }); } catch (e) { badCfg = e; }
   ok("badParams on horizon<1", badCfg !== null && (badCfg.code === "badParams" || badCfg.code === "badConfig"), badCfg ? `code=${badCfg.code}` : "no throw");
 }
+// ---- v1.1: tabular detectors + auto-chart ----
+{
+  const a = Array.from({ length: 200 }, (_, i) => i + Math.sin(i));
+  const b = a.map((v, i) => 3 * v + 7 + Math.cos(i) * 0.5);
+  const c = engine.correlation(a, b);
+  ok("correlation r ~ 1", c.r !== null && Math.abs(c.r - 1) < 0.01, `r=${c.r}`);
+  ok("correlation fit", Math.abs(c.slope - 3) < 0.05 && Math.abs(c.intercept - 7) < 0.5, `slope=${c.slope.toFixed(3)} b=${c.intercept.toFixed(3)}`);
+  ok("correlation significant", c.significant === true);
+  const flatc = engine.correlation(a, new Array(200).fill(5));
+  ok("correlation zero-variance -> r null", flatc.r === null && flatc.significant === false);
+
+  const cats = [...Array(70).fill("nav-failure"), ...Array(30).fill("wheel-stall")];
+  const m = engine.majority(cats, { threshold: 0.7 });
+  ok("majority dominant 70%", m.dominant === "nav-failure" && Math.abs(m.dominantProportion - 0.7) < 1e-9 && m.isMajority === true, `${m.dominant} ${(m.dominantProportion * 100).toFixed(0)}%`);
+  const mNo = engine.majority(cats, { threshold: 0.8 });
+  ok("majority below threshold", mNo.isMajority === false);
+
+  const devices = Array.from({ length: 12 }, (_, i) => `device-${i}`);
+  const catCol = devices.flatMap((d) => Array(50).fill(d));
+  const vals = catCol.map((c2, i) => 100 + Math.sin(i) * 5 + (c2 === "device-7" ? 300 : 0));
+  const co = engine.categoryOutlier(catCol, vals, { agg: "mean" });
+  const dev7 = co.categories.find((x) => x.label === "device-7");
+  ok("category_outlier flags device-7", co.outlierCount === 1 && dev7?.isOutlier === true && dev7.direction === "high", `outliers=${co.outlierCount}`);
+  ok("category_outlier fences ordered", co.lowerFence < co.q1 && co.q1 < co.q3 && co.q3 < co.upperFence);
+
+  const lv = engine.lowVariance(Array.from({ length: 100 }, (_, i) => 42 + (i % 7) * 1e-9));
+  ok("low_variance flat", lv.isFlat === true, `cv=${lv.cv}`);
+  const lv2 = engine.lowVariance(Array.from({ length: 100 }, (_, i) => 50 + 8 * Math.sin((2 * Math.PI * i) / 24) + (Math.sin(i * 12.9898) * 0.5 + 0.5) * 3));
+  ok("low_variance not flat", lv2.isFlat === false, `cv=${lv2.cv.toFixed(3)}`);
+
+  ok("auto -> category_outlier", engine.autoChart({ categories: catCol, y: vals }).kind === "category_outlier");
+  ok("auto -> majority", engine.autoChart({ categories: cats }).kind === "majority");
+  ok("auto -> correlation", engine.autoChart({ y: a, y2: b }).kind === "correlation");
+  ok("auto -> low_variance", engine.autoChart({ y: new Array(100).fill(42) }).kind === "low_variance");
+  const autoTs = engine.autoChart({ y: Array.from(gen.y), t: Array.from(gen.t) });
+  ok("auto -> forecast on seasonal data", autoTs.kind === "forecast" || autoTs.kind === "anomalies", autoTs.kind);
+  ok("auto gives a reason", typeof autoTs.reason === "string" && autoTs.reason.length > 10);
+}
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

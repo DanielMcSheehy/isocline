@@ -12,6 +12,7 @@ import { mountSeasonality } from "./tabs/seasonality.js";
 import { mountChangepoints } from "./tabs/changepoints.js";
 import { mountBacktest } from "./tabs/backtest.js";
 import { mountBenchmark } from "./tabs/benchmark.js";
+import { mountAutoChart } from "./tabs/autochart.js";
 
 // ---------- sparkline ----------
 
@@ -129,6 +130,7 @@ function wireTabs(): void {
     ["changepoints", mountChangepoints(panels.get("changepoints") as HTMLElement)],
     ["backtest", mountBacktest(panels.get("backtest") as HTMLElement)],
     ["benchmark", mountBenchmark(panels.get("benchmark") as HTMLElement)],
+    ["autochart", mountAutoChart(panels.get("autochart") as HTMLElement)],
   ]);
 
   let active = "forecast";

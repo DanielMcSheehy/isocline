@@ -154,7 +154,7 @@ export class IsoclineError extends Error {
   }
 }
 
-/** The high-level engine interface (see CONTRACT.md §2). */
+/** The high-level engine interface (see CONTRACT.md §2 and §11). */
 export interface Isocline {
   forecast(series: SeriesInput, opts?: ForecastOptions): ForecastResult;
   detectAnomalies(series: SeriesInput, opts?: AnomalyOptions): AnomalyResult;
@@ -163,7 +163,94 @@ export interface Isocline {
   changepoints(series: SeriesInput, opts?: ChangepointOptions): ChangepointResult;
   backtest(series: SeriesInput, opts?: BacktestOptions): BacktestResult;
   interpolate(series: SeriesInput, opts?: InterpolateOptions): Float64Array;
+  correlation(a: ArrayLike<number>, b: ArrayLike<number>): CorrelationResult;
+  majority(categories: ReadonlyArray<string>, opts?: { threshold?: number }): MajorityResult;
+  categoryOutlier(
+    categories: ReadonlyArray<string>,
+    values: ArrayLike<number>,
+    opts?: { agg?: CategoryAgg; factor?: number },
+  ): CategoryOutlierResult;
+  lowVariance(values: ArrayLike<number>, opts?: { maxCv?: number }): LowVarianceResult;
+  autoChart(input: GenericSeries, opts?: AutoChartOptions): AutoChartResult;
   readonly version: string;
 }
 
 export type LoadIsocline = (wasmBytes?: ArrayBuffer | Uint8Array) => Promise<Isocline>;
+
+// --- v1.1: tabular detectors + auto-chart (CONTRACT §11) ---
+
+export interface CorrelationResult {
+  n: number;
+  r: number | null; // Pearson; null when either input has zero variance
+  tStat: number | null;
+  significant: boolean; // |t| > 2 (normal approximation)
+  slope: number; // OLS fit of b on a
+  intercept: number;
+}
+
+export interface MajorityResult {
+  n: number;
+  threshold: number; // default 0.5
+  dominant: string | null;
+  dominantProportion: number;
+  isMajority: boolean;
+  counts: { label: string; count: number; proportion: number }[]; // sorted desc
+}
+
+export type CategoryAgg = "sum" | "mean" | "count" | "median";
+
+export interface CategoryOutlierResult {
+  agg: CategoryAgg;
+  factor: number; // IQR multiplier, default 1.5
+  q1: number;
+  q3: number;
+  iqr: number;
+  lowerFence: number;
+  upperFence: number;
+  outlierCount: number;
+  categories: { label: string; value: number; isOutlier: boolean; direction: "high" | "low" }[]; // sorted by value desc
+}
+
+export interface LowVarianceResult {
+  n: number;
+  mean: number;
+  variance: number;
+  stdDev: number;
+  cv: number; // coefficient of variation (std_dev / |mean|)
+  maxCv: number; // default 0.01
+  isFlat: boolean;
+}
+
+/** Generic column-oriented input for auto-charting. */
+export interface GenericSeries {
+  y?: ArrayLike<number>; // numeric measure (or the time series)
+  y2?: ArrayLike<number>; // second numeric measure (scatter/correlation)
+  categories?: ReadonlyArray<string>; // categorical dimension aligned with y
+  t?: ArrayLike<number>; // optional timestamps for the y series
+}
+
+export type AutoChartKind =
+  | "forecast"
+  | "anomalies"
+  | "correlation"
+  | "majority"
+  | "category_outlier"
+  | "low_variance"
+  | "distribution";
+
+export interface AutoChartOptions {
+  forecastHorizon?: number; // default 48
+  majorityThreshold?: number; // default 0.5
+}
+
+export interface AutoChartResult {
+  kind: AutoChartKind;
+  reason: string; // human-readable explanation of why this chart
+  correlation?: CorrelationResult;
+  majority?: MajorityResult;
+  categoryOutlier?: CategoryOutlierResult;
+  lowVariance?: LowVarianceResult;
+  forecast?: ForecastResult;
+  anomalies?: AnomalyResult;
+  series?: SeriesInput; // echoed time-series input for time-series kinds
+}

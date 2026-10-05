@@ -10,11 +10,16 @@ export const OP = {
   changepoints: 4,
   backtest: 5,
   interpolate: 6,
+  correlation: 7,
+  majority: 8,
+  categoryOutlier: 9,
+  lowVariance: 10,
 } as const;
 
 export interface IsoclineWasm {
   alloc(len: number): number;
   call(op: number, cfgPtr: number, cfgLen: number, yPtr: number, yLen: number): number;
+  call2(op: number, cfgPtr: number, cfgLen: number, yPtr: number, yLen: number, y2Ptr: number, y2Len: number): number;
   json_ptr(): number;
   json_len(): number;
   version(): number;
@@ -59,6 +64,25 @@ export class Abi {
     new Uint8Array(this.memory.buffer).set(cfgBytes, cfgPtr);
     new Float64Array(this.memory.buffer, yPtr, y.length).set(y);
     const status = this.exports.call(op, cfgPtr, cfgBytes.length, yPtr, y.length);
+    const header = this.readJson();
+    if (status !== 0 || header.ok === false) {
+      const code = (header.code as string) ?? STATUS_TO_CODE[status] ?? "internal";
+      throw Object.assign(new Error(`isocline: ${header.error ?? `call failed with status ${status}`}`), { code });
+    }
+    return header;
+  }
+
+  /** Two-array variant for tabular ops (CONTRACT §11). */
+  call2(op: number, cfg: string, y: ArrayLike<number>, y2: ArrayLike<number> = new Float64Array(0)): ResultHeader {
+    const cfgBytes = encoder.encode(cfg);
+    // alloc ALL buffers before writing any — arena growth can relocate
+    const cfgPtr = this.exports.alloc(cfgBytes.length);
+    const yPtr = this.exports.alloc(y.length * 8);
+    const y2Ptr = this.exports.alloc(y2.length * 8);
+    new Uint8Array(this.memory.buffer).set(cfgBytes, cfgPtr);
+    new Float64Array(this.memory.buffer, yPtr, y.length).set(y);
+    new Float64Array(this.memory.buffer, y2Ptr, y2.length).set(y2);
+    const status = this.exports.call2(op, cfgPtr, cfgBytes.length, yPtr, y.length, y2Ptr, y2.length);
     const header = this.readJson();
     if (status !== 0 || header.ok === false) {
       const code = (header.code as string) ?? STATUS_TO_CODE[status] ?? "internal";

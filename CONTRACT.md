@@ -474,3 +474,72 @@ replaces the mock with the real loader behind `?mock=1` escape hatch.
 Multi-seasonality, Box-Cox, probabilistic (quantile) models other than
 bootstrap, CSV loading, web workers (the engine is fast enough to stay
 on-thread; hooks documented for future).
+
+---
+
+## 11. Tabular detectors + auto-chart (v1.1)
+
+Non-temporal analytics over generic columns. Ops 7-10 use a second ABI entry:
+
+```wasm
+call2(op, cfg_ptr, cfg_len, y_ptr, y_len, y2_ptr, y2_len) -> status
+// op: 7 correlation, 8 majority, 9 category_outlier, 10 low_variance
+```
+
+Category columns travel as f64 codes (u32-safe) in `y`, with the distinct
+legend array in cfg JSON: `{"legend":["nav-failure",...]}`. `call2` follows
+the same arena lifetime rules as `call`.
+
+### correlation (7)
+Inputs: two equal-length f64 arrays. Output JSON:
+`{ok, n, r, t_stat, significant, slope, intercept}` — Pearson r; t-statistic
+`t = r*sqrt((n-2)/(1-r^2))`; `significant` when |t| > 2 (normal approx);
+slope/intercept from OLS of y2 on y. Needs n ≥ 3 (else `tooShort`), equal
+lengths (else `badParams`), non-zero variance in both (else r = null → JSON
+null, significant false).
+
+### majority (8)
+Inputs: category codes + legend. Cfg: `{"threshold": 0.5}` (null = default).
+Output: `{ok, n, threshold, dominant, dominant_proportion, is_majority,
+counts: [{label, count, proportion}] sorted desc}`. `dominant` null when n=0.
+`is_majority` = dominant_proportion ≥ threshold.
+
+### category_outlier (9) — Ava-style non-temporal IQR outlier
+Inputs: category codes + legend (y), numeric values (y2). Cfg:
+`{"agg":"sum"|"mean"|"count"|"median" (default "sum"), "factor": 1.5}`.
+Aggregate values per category, quartiles (type 7) across categories,
+fences Q1 − k·IQR / Q3 + k·IQR. Output: `{ok, agg, factor, q1, q3, iqr,
+lower_fence, upper_fence, outlier_count, categories: [{label, value,
+is_outlier, direction:"high"|"low"}] sorted by value desc}`. Needs ≥ 4
+categories (else `tooShort`).
+
+### low_variance (10)
+Inputs: f64 values. Cfg: `{"max_cv": 0.01}`. Output: `{ok, n, mean, variance,
+std_dev, cv, max_cv, is_flat}`. cv = std_dev / |mean| (mean ≈ 0 → absolute
+std_dev check against 1e-9). `is_flat` = cv ≤ max_cv.
+
+### TS engine surface (packages/isocline)
+
+```ts
+correlation(a: ArrayLike<number>, b: ArrayLike<number>): CorrelationResult;
+majority(categories: ReadonlyArray<string>, opts?: { threshold?: number }): MajorityResult;
+categoryOutlier(categories: ReadonlyArray<string>, values: ArrayLike<number>, opts?: { agg?: CategoryAgg; factor?: number }): CategoryOutlierResult;
+lowVariance(values: ArrayLike<number>, opts?: { maxCv?: number }): LowVarianceResult;
+autoChart(input: GenericSeries): AutoChartResult;   // TS-side dispatcher
+```
+
+`autoChart` heuristics (deterministic, explainable via `reason`):
+1. categories + y present → category_outlier if outliers > 0, else majority
+   if is_majority, else "distribution" (bar of aggregates).
+2. y + y2 present → correlation (scatter is the chart).
+3. y only: low_variance check first (flat wins) → else time-series pipeline:
+   seasonality strength ≥ 0.2 → forecast + anomalies; else anomalies on raw.
+
+### Plot layer (packages/isocline-plot)
+
+`correlationPlot(a, b, res)` (scatter + fit + r annotation) ·
+`majorityPlot(res)` (proportion bars, dominant highlighted, threshold rule) ·
+`categoryOutlierPlot(res)` (dot-per-category + IQR fences, outliers colored) ·
+`lowVariancePlot(values, res)` (line + mean band + cv annotation) ·
+`autoChartPlot(input, auto, opts?)` (dispatches to the right renderer,
+including the existing time-series plots).

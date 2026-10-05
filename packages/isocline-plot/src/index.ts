@@ -12,6 +12,26 @@ export { decomposePlot, type DecomposeVizOptions } from "./decompose.js";
 export { seasonalityPlot, seasonalityCandidates, type SeasonalityVizOptions } from "./seasonality.js";
 export { changepointMarks, changepointPlot, type ChangepointVizOptions } from "./changepoint.js";
 export { backtestPlot, backtestWinner, type BacktestVizOptions } from "./backtest.js";
+export {
+  correlationMarks,
+  correlationPlot,
+  correlationHeadline,
+  majorityMarks,
+  majorityPlot,
+  majorityBars,
+  categoryOutlierMarks,
+  categoryOutlierPlot,
+  categoryRows,
+  lowVarianceMarks,
+  lowVariancePlot,
+  lowVarianceHeadline,
+  variancePoints,
+  type TabularVizOptions,
+  type MajorityRow,
+  type CategoryRow,
+  type VariancePoint,
+} from "./tabular.js";
+export { autoChartPlot, autoChartReason, type AutoChartVizOptions } from "./auto.js";
 
 /** Thin wrapper: theme-first Plot.plot. */
 export function plot(spec: Partial<Plot.PlotOptions> = {}): HTMLElement {

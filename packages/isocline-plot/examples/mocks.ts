@@ -9,6 +9,12 @@ import type {
   ChangepointResult,
   BacktestResult,
   SeriesInput,
+  CorrelationResult,
+  MajorityResult,
+  CategoryOutlierResult,
+  LowVarianceResult,
+  AutoChartResult,
+  AutoChartKind,
 } from "isocline";
 
 const P = 24;
@@ -118,7 +124,7 @@ export function mockAnomalies(s: SeriesInput): AnomalyResult {
   const med = quantile([...r].sort((a, b) => a - b), 0.5);
   const mad = quantile([...r.map((v) => Math.abs(v - med))].sort((a, b) => a - b), 0.5) || 1e-9;
   const scores = new Float64Array(n);
-  const anomalies = [];
+  const anomalies: import("isocline").Anomaly[] = [];
   for (let i = 0; i < n; i++) {
     scores[i] = (0.6745 * (r[i]! - med)) / mad;
     if (Math.abs(scores[i]!) > 3.5 && Number.isFinite(y[i])) {
@@ -257,4 +263,156 @@ export function mockBacktest(): BacktestResult {
     { model: "snaive" as const, folds: 3, rmse: 3.02, mae: 2.44, smape: 3.9, coverage: 0.81 },
   ];
   return { rows, horizon: 24, folds: 3 };
+}
+
+// ---- tabular detectors (CONTRACT §11) --------------------------------------
+
+/** Correlated (a, b) sample + honest Pearson r / OLS computed from the data. */
+export function mockCorrelation(n = 500): { a: number[]; b: number[]; res: CorrelationResult } {
+  const rng = mulberry32(11);
+  const a: number[] = [];
+  const b: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const x = rng() * 100;
+    a.push(x);
+    b.push(2.1 * x + 5 + (rng() - 0.5) * 60);
+  }
+  const ma = a.reduce((s, v) => s + v, 0) / n;
+  const mb = b.reduce((s, v) => s + v, 0) / n;
+  let cov = 0;
+  let va = 0;
+  let vb = 0;
+  for (let i = 0; i < n; i++) {
+    cov += (a[i]! - ma) * (b[i]! - mb);
+    va += (a[i]! - ma) ** 2;
+    vb += (b[i]! - mb) ** 2;
+  }
+  const r = cov / Math.sqrt(va * vb);
+  const slope = cov / va;
+  const intercept = mb - slope * ma;
+  const tStat = Math.abs(r) * Math.sqrt((n - 2) / Math.max(1e-12, 1 - r * r));
+  return {
+    a,
+    b,
+    res: { n, r, tStat, significant: tStat > 2, slope, intercept },
+  };
+}
+
+export function mockMajority(): MajorityResult {
+  const raw: [string, number][] = [
+    ["success", 640],
+    ["timeout", 180],
+    ["rate-limit", 120],
+    ["validation", 60],
+  ];
+  const n = raw.reduce((s, [, c]) => s + c, 0);
+  const counts = raw
+    .map(([label, count]) => ({ label, count, proportion: count / n }))
+    .sort((x, y) => y.count - x.count);
+  return {
+    n,
+    threshold: 0.5,
+    dominant: counts[0]?.label ?? null,
+    dominantProportion: counts[0]?.proportion ?? 0,
+    isMajority: (counts[0]?.proportion ?? 0) >= 0.5,
+    counts,
+  };
+}
+
+/** Type-7 quantile (linear interpolation) over a sorted copy. */
+function quantileType7(values: number[], q: number): number {
+  const sorted = [...values].sort((x, y) => x - y);
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  const a = sorted[lo] ?? 0;
+  const b = sorted[hi] ?? a;
+  return a + (b - a) * (pos - lo);
+}
+
+export function mockCategoryOutlier(): CategoryOutlierResult {
+  const raw: [string, number][] = [
+    ["checkout", 412],
+    ["search", 108],
+    ["upload", 121],
+    ["auth", 97],
+    ["email", 6],
+    ["reports", 113],
+    ["export", 84],
+    ["media", 102],
+  ];
+  const values = raw.map(([, v]) => v);
+  const q1 = quantileType7(values, 0.25);
+  const q3 = quantileType7(values, 0.75);
+  const iqr = q3 - q1;
+  const lowerFence = q1 - 1.5 * iqr;
+  const upperFence = q3 + 1.5 * iqr;
+  const categories = raw
+    .map(([label, value]) => ({
+      label,
+      value,
+      isOutlier: value > upperFence || value < lowerFence,
+      direction: value > q3 ? ("high" as const) : ("low" as const),
+    }))
+    .sort((x, y) => y.value - x.value);
+  return {
+    agg: "sum",
+    factor: 1.5,
+    q1,
+    q3,
+    iqr,
+    lowerFence,
+    upperFence,
+    outlierCount: categories.filter((c) => c.isOutlier).length,
+    categories,
+  };
+}
+
+export function mockLowVariance(n = 120): { values: number[]; res: LowVarianceResult } {
+  const rng = mulberry32(3);
+  const values = Array.from({ length: n }, () => 42 + (rng() - 0.5) * 0.06);
+  const mean = values.reduce((s, v) => s + v, 0) / n;
+  const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
+  const stdDev = Math.sqrt(variance);
+  const cv = stdDev / Math.abs(mean || 1e-9);
+  const maxCv = 0.01;
+  return {
+    values,
+    res: { n, mean, variance, stdDev, cv, maxCv, isFlat: cv <= maxCv },
+  };
+}
+
+// ---- auto-chart (CONTRACT §11) ---------------------------------------------
+
+export function mockAuto(kind: AutoChartKind, series: SeriesInput, deps: {
+  forecast: ForecastResult;
+  anomalies: AnomalyResult;
+}): AutoChartResult {
+  const reason: Record<AutoChartKind, string> = {
+    forecast: "seasonality strength 0.91 ≥ 0.2 → forecast + anomalies",
+    anomalies: "aperiodic series → anomaly detection on raw",
+    correlation: "y + y2 present → correlation (scatter is the chart)",
+    majority: "categories present · dominant 64% ≥ threshold 0.5",
+    category_outlier: "categories present · 2 IQR outliers detected",
+    low_variance: "cv 0.0004 ≤ max_cv 0.01 → flat wins",
+    distribution: "categories present · no outliers · no majority → distribution",
+  };
+  const base: AutoChartResult = { kind, reason: reason[kind] };
+  switch (kind) {
+    case "forecast":
+      return { ...base, series, forecast: deps.forecast };
+    case "anomalies":
+      return { ...base, series, anomalies: deps.anomalies };
+    case "correlation":
+      // caller supplies the columns as input {y: a, y2: b} to autoChartPlot
+      return { ...base, correlation: mockCorrelation().res };
+    case "majority":
+      return { ...base, majority: mockMajority() };
+    case "category_outlier":
+      return { ...base, categoryOutlier: mockCategoryOutlier() };
+    case "low_variance":
+      return { ...base, lowVariance: mockLowVariance().res };
+    case "distribution":
+      return { ...base, categoryOutlier: mockCategoryOutlier() };
+  }
 }

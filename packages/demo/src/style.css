@@ -633,6 +633,60 @@ table.data tr.baseline td {
   }
 }
 
+/* ---------- auto-chart tab ---------- */
+
+.auto-samples {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.auto-samples .btn.is-active {
+  color: var(--cyan);
+  border-color: var(--cyan);
+}
+
+.auto-paste {
+  flex: 1 1 100%;
+}
+
+.auto-paste textarea {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  background: var(--panel2);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: 500 12px var(--mono);
+  padding: 8px;
+  resize: vertical;
+}
+
+.auto-paste .ctl-row {
+  margin-top: 8px;
+}
+
+.auto-paste-error {
+  font: 500 12px var(--mono);
+  color: var(--red);
+  margin-top: 6px;
+}
+
+.auto-paste-error:empty {
+  display: none;
+}
+
+.chip.reason {
+  white-space: normal;
+  max-width: 760px;
+}
+
+.chip.cyan .v {
+  color: var(--cyan);
+}
+
 /* ---------- responsive: sidebar collapses to top drawer < 900px ---------- */
 
 @media (max-width: 900px) {

@@ -7,7 +7,9 @@
 //! The crate exposes six operations over a univariate `&[f64]` series:
 //! forecasting with bootstrap prediction intervals, anomaly detection,
 //! seasonal decomposition, seasonality detection, changepoint detection,
-//! rolling-origin backtesting, plus NaN interpolation. All operations are
+//! rolling-origin backtesting, plus NaN interpolation — and the non-temporal
+//! (tabular) detectors of [`tabular`]: correlation, majority, per-category
+//! IQR outliers, and low-variance detection. All operations are
 //! deterministic given the same seed and never panic on any input.
 //!
 //! Inputs may contain `NaN` (missing values); every operation except
@@ -69,6 +71,7 @@ pub mod naive;
 pub mod preprocess;
 pub mod seasonality;
 pub mod stl;
+pub mod tabular;
 
 pub use anomaly::{
     detect_anomalies, Anomaly, AnomalyDirection, AnomalyMethod, AnomalyOptions, AnomalyResult,
@@ -87,6 +90,11 @@ pub use seasonality::{
     SeasonSource,
 };
 pub use stl::{stl_fit, StlFit};
+pub use tabular::{
+    category_outlier, correlation, low_variance, majority, CategoryAgg, CategoryDirection,
+    CategoryOutlierResult, CategoryPoint, CorrelationResult, LowVarianceResult, MajorityCount,
+    MajorityResult,
+};
 use std::collections::BTreeMap;
 
 /// Crate version.
