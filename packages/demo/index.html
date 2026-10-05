@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>isocline — time-series intelligence demo</title>
+    <style>
+      /* avoid white flash before the bundle lands */
+      html {
+        background: #0b0e14;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <button id="sidebar-toggle" class="icon-btn" aria-label="Toggle data controls" title="Toggle data controls">&#9776;</button>
+      <div class="wordmark">isocline<span class="wordmark-dot">.</span></div>
+      <div class="tagline">tiny, fast time-series intelligence — rust &rarr; wasm &rarr; web</div>
+      <div class="badges">
+        <span class="chip" id="badge-wasm-size" title="awaiting engine">wasm &middot; &mdash;</span>
+        <span class="chip" id="badge-throughput" title="awaiting engine">&mdash; op/s</span>
+        <span class="chip chip-quiet" id="badge-version" title="engine version">v&mdash;</span>
+      </div>
+    </header>
+
+    <div class="shell">
+      <aside class="sidebar" id="sidebar" aria-label="Synthetic data controls">
+        <div class="side-section">
+          <h2>synthetic data</h2>
+
+          <div class="ctl">
+            <label for="syn-n">n <output id="syn-n-v">720</output></label>
+            <input type="range" id="syn-n" min="256" max="4000" step="16" value="720" />
+          </div>
+
+          <div class="ctl">
+            <label for="syn-period">period</label>
+            <div class="ctl-row">
+              <select id="syn-period">
+                <option value="0">none</option>
+                <option value="7">7</option>
+                <option value="24" selected>24</option>
+                <option value="168">168</option>
+              </select>
+            </div>
+            <div class="hint">engine auto-detects seasonality</div>
+          </div>
+
+          <div class="ctl">
+            <label for="syn-trend">trend slope <output id="syn-trend-v">0.020</output></label>
+            <input type="range" id="syn-trend" min="0" max="0.1" step="0.005" value="0.02" />
+          </div>
+
+          <div class="ctl">
+            <label for="syn-sigma">noise &sigma; <output id="syn-sigma-v">1.5</output></label>
+            <input type="range" id="syn-sigma" min="0" max="6" step="0.1" value="1.5" />
+          </div>
+
+          <div class="ctl">
+            <label for="syn-amplitude">amplitude <output id="syn-amplitude-v">8.0</output></label>
+            <input type="range" id="syn-amplitude" min="0" max="20" step="0.5" value="8" />
+          </div>
+
+          <div class="ctl">
+            <label for="syn-spikes">spikes <output id="syn-spikes-v">3</output></label>
+            <input type="range" id="syn-spikes" min="0" max="8" step="1" value="3" />
+          </div>
+
+          <div class="ctl">
+            <label for="syn-dips">dips <output id="syn-dips-v">2</output></label>
+            <input type="range" id="syn-dips" min="0" max="8" step="1" value="2" />
+          </div>
+
+          <div class="ctl">
+            <label for="syn-eventmag">event magnitude &sigma; <output id="syn-eventmag-v">6.0</output></label>
+            <input type="range" id="syn-eventmag" min="2" max="12" step="0.5" value="6" />
+          </div>
+
+          <div class="ctl">
+            <label class="check">
+              <input type="checkbox" id="syn-shift" checked />
+              level shift
+            </label>
+            <label for="syn-shiftmag">shift &sigma; <output id="syn-shiftmag-v">5.0</output></label>
+            <input type="range" id="syn-shiftmag" min="0" max="15" step="0.5" value="5" />
+          </div>
+
+          <div class="ctl">
+            <label class="check">
+              <input type="checkbox" id="syn-drift" checked />
+              late drift
+            </label>
+          </div>
+
+          <div class="ctl">
+            <label for="syn-missing">missing points <output id="syn-missing-v">8</output></label>
+            <input type="range" id="syn-missing" min="0" max="40" step="1" value="8" />
+          </div>
+
+          <div class="ctl">
+            <label for="syn-seed">seed</label>
+            <div class="ctl-row">
+              <input type="number" id="syn-seed" min="0" max="999999" step="1" value="42" class="num-input" />
+              <button id="syn-dice" class="btn ghost" title="randomize seed">roll</button>
+            </div>
+          </div>
+
+          <button id="btn-regenerate" class="btn primary">regenerate</button>
+
+          <div class="sparkline-block">
+            <div class="sparkline-label">current series</div>
+            <canvas id="sparkline" width="248" height="56" aria-label="series sparkline"></canvas>
+          </div>
+
+          <span id="engine-pill" class="pill pill-amber" title="wasm engine not loaded &mdash; running the pure-TS mock">engine: MOCK</span>
+        </div>
+      </aside>
+
+      <main class="main">
+        <nav class="tabs" role="tablist" aria-label="Views">
+          <button class="tab is-active" role="tab" aria-selected="true" data-tab="forecast" id="tabbtn-forecast">forecast</button>
+          <button class="tab" role="tab" aria-selected="false" data-tab="anomalies" id="tabbtn-anomalies">anomalies</button>
+          <button class="tab" role="tab" aria-selected="false" data-tab="decompose" id="tabbtn-decompose">decompose</button>
+          <button class="tab" role="tab" aria-selected="false" data-tab="seasonality" id="tabbtn-seasonality">seasonality</button>
+          <button class="tab" role="tab" aria-selected="false" data-tab="changepoints" id="tabbtn-changepoints">changepoints</button>
+          <button class="tab" role="tab" aria-selected="false" data-tab="backtest" id="tabbtn-backtest">backtest</button>
+          <button class="tab" role="tab" aria-selected="false" data-tab="benchmark" id="tabbtn-benchmark">benchmark</button>
+        </nav>
+
+        <section class="tab-panel is-active" id="tab-forecast" role="tabpanel" aria-labelledby="tabbtn-forecast"></section>
+        <section class="tab-panel" id="tab-anomalies" role="tabpanel" aria-labelledby="tabbtn-anomalies"></section>
+        <section class="tab-panel" id="tab-decompose" role="tabpanel" aria-labelledby="tabbtn-decompose"></section>
+        <section class="tab-panel" id="tab-seasonality" role="tabpanel" aria-labelledby="tabbtn-seasonality"></section>
+        <section class="tab-panel" id="tab-changepoints" role="tabpanel" aria-labelledby="tabbtn-changepoints"></section>
+        <section class="tab-panel" id="tab-backtest" role="tabpanel" aria-labelledby="tabbtn-backtest"></section>
+        <section class="tab-panel" id="tab-benchmark" role="tabpanel" aria-labelledby="tabbtn-benchmark"></section>
+      </main>
+    </div>
+
+    <div id="toast-root" aria-live="polite"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

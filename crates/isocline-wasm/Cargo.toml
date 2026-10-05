@@ -1,0 +1,14 @@
+[package]
+name = "isocline-wasm"
+description = "Flat-ABI WASM bindings for isocline-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+isocline-core = { path = "../isocline-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

@@ -1,0 +1,30 @@
+{
+  "name": "isocline-plot",
+  "version": "0.1.0",
+  "description": "Observable Plot visualization layer for isocline results",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "preview": "vite dev examples --config examples/vite.config.ts"
+  },
+  "peerDependencies": {
+    "@observablehq/plot": "^0.6.17"
+  },
+  "devDependencies": {
+    "@observablehq/plot": "^0.6.17",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.0"
+  }
+}

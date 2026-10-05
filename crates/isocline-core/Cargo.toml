@@ -1,0 +1,12 @@
+[package]
+name = "isocline-core"
+description = "Fast, dependency-free time-series forecasting and anomaly detection"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rayon = { version = "1", optional = true }
+
+[features]
+parallel = ["dep:rayon"]
