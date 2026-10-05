@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "006438d6-6e4d-49ca-904e-9e53616fff68",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/mcsheehy/.zcode/workspace/default/isocline/.archify/architecture-isocline-20261005-145500/candidate.json",
+  "output": "/Users/mcsheehy/.zcode/workspace/default/isocline/.archify/architecture-isocline-20261005-145500/isocline-architecture.html",
+  "specification": {
+    "sha256": "851cf9062137575b5a6baa71ed3ccabf51b6940d485b161c0915371db9af4cbf",
+    "bytes": 5008
+  },
+  "artifact": {
+    "sha256": "e30074d22508d95ecb7ec579d613272ae916ab5fa7c0e1da13f0b08a062c9c1c",
+    "bytes": 761091
+  }
+}

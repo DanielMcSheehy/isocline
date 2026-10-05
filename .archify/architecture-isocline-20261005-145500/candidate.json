@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "isocline: Rust to WASM to Web",
+    "locale": "en",
+    "output": ".archify/architecture-isocline-20261005-145500/isocline-architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "git@github.com:DanielMcSheehy/isocline.git",
+      "revision": "f17e9516029ca4973a92ab27005350df444f9267",
+      "link_mode": "local-only"
+    },
+    "views": [
+      { "id": "web-journey", "label": "Web journey", "focus": ["analyst", "demo", "engine", "wasm", "core"], "note": "one forecast's path from click to wasm and back" },
+      { "id": "rendering", "label": "Rendering", "focus": ["demo", "plot", "obsplot"], "note": "results become Observable Plot marks" },
+      { "id": "scale-up", "label": "Server scale-up", "focus": ["server", "core"], "note": "same core, rayon batch, no browser" }
+    ]
+  },
+  "components": [
+    { "id": "analyst", "type": "external", "label": "Visitor", "sublabel": "analyst · web browser", "icon": "person", "pos": [40, 60], "size": [140, 60] },
+    { "id": "demo", "type": "frontend", "label": "Demo Playground", "sublabel": "Vite · 7 tabs · live badges", "pos": [250, 60], "size": [170, 64], "sources": [ { "path": "packages/demo/src/engine.ts", "label": "getEngine loads wasm" }, { "path": "packages/demo/src/tabs/forecast.ts", "label": "tab wiring" } ] },
+    { "id": "engine", "type": "backend", "label": "isocline (npm)", "sublabel": "TS engine wrapper · zero deps", "pos": [540, 60], "size": [170, 64], "sources": [ { "path": "packages/isocline/src/engine.ts", "label": "7 typed ops" }, { "path": "packages/isocline/src/abi.ts", "label": "wasm marshalling" } ] },
+    { "id": "wasm", "type": "backend", "label": "isocline-wasm", "sublabel": "flat C ABI · cdylib", "tag": "88 KB gz", "pos": [860, 60], "size": [170, 64], "sources": [ { "path": "crates/isocline-wasm/src/lib.rs", "label": "extern C exports + arena" } ] },
+    { "id": "core", "type": "backend", "label": "isocline-core", "sublabel": "algorithms · std-only Rust", "tag": "80 tests", "pos": [1200, 60], "size": [170, 64], "sources": [ { "path": "crates/isocline-core/src/lib.rs", "label": "public API" }, { "path": "crates/isocline-core/src/forecast.rs", "label": "dispatch + backtest" } ] },
+    { "id": "plot", "type": "frontend", "label": "isocline-plot", "sublabel": "Plot marks + dark theme", "pos": [250, 320], "size": [170, 60], "sources": [ { "path": "packages/isocline-plot/src/index.ts", "label": "plot exports" }, { "path": "packages/isocline-plot/src/forecast.ts", "label": "forecast marks" } ] },
+    { "id": "obsplot", "type": "external", "label": "Observable Plot", "sublabel": "peer dependency", "pos": [250, 510], "size": [170, 60], "sources": [ { "path": "packages/isocline-plot/package.json", "label": "peerDependencies" } ] },
+    { "id": "server", "type": "backend", "label": "Rust services", "sublabel": "rayon · batch ops", "pos": [1200, 320], "size": [170, 60], "sources": [ { "path": "crates/isocline-core/src/batch.rs", "label": "batch_forecast" }, { "path": "crates/isocline-core/Cargo.toml", "label": "parallel feature" } ] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "packages/ · npm workspaces (browser runtime)", "wraps": ["demo", "engine", "plot"] },
+    { "kind": "region", "label": "crates/ · Rust workspace (build + server)", "wraps": ["wasm", "core", "server"] }
+  ],
+  "connections": [
+    { "id": "analyst-to-demo", "from": "analyst", "to": "demo", "label": "explores" },
+    { "id": "demo-to-engine", "from": "demo", "to": "engine", "label": "7 typed ops", "variant": "emphasis" },
+    { "id": "engine-to-wasm", "from": "engine", "to": "wasm", "label": "flat C ABI" },
+    { "id": "wasm-to-core", "from": "wasm", "to": "core", "label": "cargo dep" },
+    { "id": "demo-to-plot", "from": "demo", "to": "plot", "label": "renders results", "fromSide": "bottom", "toSide": "top" },
+    { "id": "plot-to-obsplot", "from": "plot", "to": "obsplot", "label": "Plot.plot marks", "fromSide": "bottom", "toSide": "top" },
+    { "id": "server-to-core", "from": "server", "to": "core", "label": "batch · rayon", "variant": "dashed", "fromSide": "top", "toSide": "bottom" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Engine core", "items": [ "std-only Rust: robust STL, ETS(A,Ad,A) + Nelder-Mead, AR(p), FFT seasonality", "4 anomaly detectors, changepoints, rolling-origin backtesting", "80 tests green, clippy clean, bitwise deterministic by seed" ] },
+    { "dot": "emerald", "title": "Web path", "items": [ "240 KB wasm binary, 88 KB gzipped, no wasm-bindgen runtime", "zero-dependency TypeScript wrapper, results copied out as Float64Array", "Observable Plot marks layer with shared dark theme" ] },
+    { "dot": "amber", "title": "Scale-up", "items": [ "rayon batch operations behind the optional parallel feature", "server-side crates consume isocline-core directly, no browser needed", "same deterministic algorithms on both paths" ] }
+  ]
+}

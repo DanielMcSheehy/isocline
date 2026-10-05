@@ -5,6 +5,14 @@ real wasm engine in-browser (engine pill says `wasm`, badges are measured at
 runtime). Architecture diagram: [docs/architecture.html](architecture.html)
 (also live on GitHub Pages).
 
+## Architecture
+
+The whole system on one canvas: the visitor's journey across the npm-workspace
+boundary into the Rust workspace, the rendering branch, and the rayon
+scale-up path. Interactive version: [architecture.html](architecture.html).
+
+![architecture diagram](screenshots/architecture.png)
+
 ## Forecast
 
 Point forecast with 95% bootstrap prediction intervals. Auto model selection

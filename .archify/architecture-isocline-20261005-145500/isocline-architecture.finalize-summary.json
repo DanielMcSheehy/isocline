@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/Users/mcsheehy/.zcode/workspace/default/isocline/.archify/architecture-isocline-20261005-145500/candidate.json",
+    "sha256": "851cf9062137575b5a6baa71ed3ccabf51b6940d485b161c0915371db9af4cbf",
+    "bytes": 5008
+  },
+  "artifact": {
+    "path": "/Users/mcsheehy/.zcode/workspace/default/isocline/.archify/architecture-isocline-20261005-145500/isocline-architecture.html",
+    "sha256": "e30074d22508d95ecb7ec579d613272ae916ab5fa7c0e1da13f0b08a062c9c1c",
+    "bytes": 761091
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "fail"
+  },
+  "failedStage": "browser-check",
+  "diagnostics": [
+    {
+      "code": "viewer/evidence-path-conflict",
+      "severity": "error",
+      "message": "browser-check will not replace the existing unowned evidence path \"/Users/mcsheehy/.zcode/workspace/default/isocline/.archify/architecture-isocline-20261005-145500/isocline-architecture.browser-check.json\".",
+      "subject": {
+        "artifact": "/Users/mcsheehy/.zcode/workspace/default/isocline/.archify/architecture-isocline-20261005-145500/isocline-architecture.html",
+        "evidencePath": "/Users/mcsheehy/.zcode/workspace/default/isocline/.archify/architecture-isocline-20261005-145500/isocline-architecture.browser-check.json"
+      },
+      "evidence": {
+        "reason": {
+          "code": "ownership-artifact-mismatch"
+        }
+      },
+      "supportedFixes": [
+        "move the conflicting file aside, or choose a separate --out-dir, then rerun browser-check"
+      ]
+    }
+  ],
+  "diagnosticSummary": {
+    "total": 1,
+    "shown": 1,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/Users/mcsheehy/.zcode/workspace/default/isocline/.archify/architecture-isocline-20261005-145500/isocline-architecture.finalize.json",
+    "summaryReceipt": "/Users/mcsheehy/.zcode/workspace/default/isocline/.archify/architecture-isocline-20261005-145500/isocline-architecture.finalize-summary.json",
+    "browserCheckReceipt": "/Users/mcsheehy/.zcode/workspace/default/isocline/.archify/architecture-isocline-20261005-145500/isocline-architecture.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.0.1",
+    "availableVersion": "3.0.1",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-05T18:52:46.886Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 527
+}
