@@ -33,7 +33,7 @@ Layer rules:
   memory offsets.
 - `engine.ts` maps the header JSON + channels onto the contract result types
   and enforces copying.
-- `isocline-plot` imports only **types** from `isocline` — it has no runtime
+- `isocline-plot` imports only **types** from `isocline` - it has no runtime
   dependency on the engine, so it works with mocked results.
 
 ## Data flow for one call
@@ -46,8 +46,8 @@ Taking `forecast` as the example (`Abi.call` in `abi.ts`):
    (`maxPeriod`) and the `"auto"` sentinel are translated here; `"auto"`
    becomes `null`.
 2. **Copy in.** `Abi.call` calls `alloc` twice (config bytes, then the f64
-   array) *before* writing either — a growth during the second alloc can
-   relocate the arena and invalidate the first pointer — then writes the
+   array) *before* writing either - a growth during the second alloc can
+   relocate the arena and invalidate the first pointer - then writes the
    config bytes and a `Float64Array` copy of `y` into linear memory.
 3. **`call(op, cfg_ptr, cfg_len, y_ptr, y_len)`** in wasm copies both
    buffers out, resets the bump arena, dispatches to the core op
@@ -60,7 +60,7 @@ Taking `forecast` as the example (`Abi.call` in `abi.ts`):
    5 internal).
 5. **TS copies out.** `Abi.channel(header, name)` builds
    `Float64Array(memory.buffer, off, len)` **after** `call` returns and
-   `.slice()`s immediately — the arena is only valid until the next `call`,
+   `.slice()`s immediately - the arena is only valid until the next `call`,
    and memory growth can detach the buffer. The engine then assembles the
    typed result (`ForecastResult`, `AnomalyResult`, ...) and throws
    `IsoclineError` on failure headers.
@@ -74,7 +74,7 @@ Taking `forecast` as the example (`Abi.call` in `abi.ts`):
 | Bootstrap prediction intervals | One mechanism covers every model family (ETS, AR, snaive) uniformly; no distributional assumptions; empirically calibrated (coverage 0.88–1.0 at nominal 0.95 in the test gates). |
 | Deterministic seeded RNG (xorshift, default seed 42) | Same inputs + seed → byte-identical outputs, verified by tests; reproducible CI and demos. |
 | `rayon` behind a feature flag | Keeps the wasm build lean (single-threaded, small binary); `batch_forecast` / `batch_detect_anomalies` scale up on native targets with results identical to sequential runs. |
-| JSON for config, binary for data | Configs are tiny scalar-only objects (snake_case keys, `null` for auto) — JSON is self-describing and cheap; the series and all numeric outputs are potentially large f64 arrays, so they cross the boundary as raw memory with an offset/length table in the header. |
+| JSON for config, binary for data | Configs are tiny scalar-only objects (snake_case keys, `null` for auto) - JSON is self-describing and cheap; the series and all numeric outputs are potentially large f64 arrays, so they cross the boundary as raw memory with an offset/length table in the header. |
 | Copy in, copy out, caller-owned results | Input arrays are copied per call; outputs are `.slice()`ed out of the arena. No aliasing of wasm memory, so callers can hold results across calls safely. |
 | `isocline-plot` types-only dependency | Plots work with any contract-shaped object (mocks, other engines); keeps the viz layer independently testable (`tsc --noEmit`) and tree-shakeable. |
 

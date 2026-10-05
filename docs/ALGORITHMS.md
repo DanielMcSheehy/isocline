@@ -1,4 +1,4 @@
-# Isocline Algorithms — A Math Guide
+# Isocline Algorithms - A Math Guide
 
 This is the user-facing guide to what the engine actually computes. It
 mirrors `CONTRACT.md` §4 and the doc comments in `crates/isocline-core`;
@@ -77,7 +77,7 @@ Inner loop (repeated `seasons` times, default 3):
 1. Detrend: `z = y − trend`.
 2. **Cycle-subseries smoothing**: for each phase `p ∈ 0..period`, LOESS-1
    fits that subseries (x = cycle index, y = the z values at that phase)
-   and is evaluated at every existing point — and, for forecasting, `h`
+   and is evaluated at every existing point - and, for forecasting, `h`
    steps beyond the data. This out-of-sample LOESS evaluation is what
    produces `seasonal_project(h)` without refitting anything.
 3. **Low-pass**: moving averages of lengths `period`, `period`, `2` (with
@@ -100,7 +100,7 @@ values are interpolated before decomposing.
 ## 3. ETS: Holt–Winters with damped trend
 
 **What it does.** Exponential smoothing with an additive error, damped
-additive trend, and additive seasonality — model **ETS(A, Ad, A)** — fitted
+additive trend, and additive seasonality - model **ETS(A, Ad, A)** - fitted
 end-to-end numerically. Used by `model: "ets"` and inside `stl_ets`.
 
 State equations (`l` = level, `b` = damped trend, `s[i]` = seasonal state
@@ -151,7 +151,7 @@ order picked automatically. Used by `model: "ar"`.
 
 ## 5. Naive and seasonal-naive
 
-Parameter-free baselines — important both as fallbacks and as the bar any
+Parameter-free baselines - important both as fallbacks and as the bar any
 fancier model must beat:
 
 - **naive**: `ŷ_{n+h} = y_n`.
@@ -219,7 +219,7 @@ Four detectors, all sharing the same result shape: a list of flagged
 `scores` array (positive = above expected). The `direction` option filters
 `"spike"` / `"dip"`.
 
-### `stl` — STL residual modified z-score (default)
+### `stl` - STL residual modified z-score (default)
 
 Robust STL (§2) → residual `r_t`; modified z-score
 
@@ -229,16 +229,16 @@ mz = 0.6745 · (r − median(r)) / MAD(r)
 
 where MAD is the median absolute deviation (0.6745 scales it to a
 standard-deviation equivalent for Gaussian data). Flag `|mz| > threshold`
-(default 3.5). `expected = trend + seasonal` — the most interpretable
+(default 3.5). `expected = trend + seasonal` - the most interpretable
 "what should have happened" line.
 
-### `madz` — modified z on rolling-median detrend
+### `madz` - modified z on rolling-median detrend
 
 Detrend with a centered rolling median (window = the period when known,
 else 11; the window shrinks at the ends), then modified z-score of the
 residual as above, flag > 3.5. Cheaper than STL and robust to trend.
 
-### `iqr` — interquartile-range fences
+### `iqr` - interquartile-range fences
 
 Compute Q1/Q3 (of y, after optional detrending as in `madz`); flag points
 outside
@@ -250,7 +250,7 @@ outside
 `score` is the signed distance in k units, normalized so the threshold
 semantics match.
 
-### `ewma` — EWMA control chart
+### `ewma` - EWMA control chart
 
 ```
 z_t = λ·y_t + (1 − λ)·z_{t−1},   λ = lambda (default 0.3, in (0,1])
@@ -259,7 +259,7 @@ z_t = λ·y_t + (1 − λ)·z_{t−1},   λ = lambda (default 0.3, in (0,1])
 ```
 
 Flag `|z_t − z̄| > L·σ_z` with `L = threshold` (default 3.0). The first
-`max(period, 11)` points are warmup and never flagged. `expected = z_t` —
+`max(period, 11)` points are warmup and never flagged. `expected = z_t`  - 
 this detector is aimed at slow drifts and sustained small shifts, the
 opposite regime from the spike-hunting STL detector.
 
@@ -289,7 +289,7 @@ The test gate verifies localization within ±3 of an injected level shift.
 Rolling-origin evaluation (`backtest()`): the last `folds × horizon` points
 are held out; fold `i` trains on the first `n − (folds − i)·horizon` points
 and forecasts `horizon` steps. Metrics are aggregated across folds per
-model — out-of-sample only, no in-sample numbers are mixed in. Each row
+model - out-of-sample only, no in-sample numbers are mixed in. Each row
 reports `rmse`, `mae`, `smape`, the fold count, and `coverage`: the
 fraction of held-out actuals that fell inside the model's prediction
 interval (a second, data-driven check on §7's calibration). `"auto"` is

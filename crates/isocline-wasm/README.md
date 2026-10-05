@@ -1,7 +1,7 @@
 # isocline-wasm
 
 Flat-ABI WASM bindings for `isocline-core`. Crate type is `cdylib` with a
-plain C ABI — **no wasm-bindgen, no wasm-pack, no JS glue generated**. The
+plain C ABI - **no wasm-bindgen, no wasm-pack, no JS glue generated**. The
 TypeScript side (`packages/isocline/src/abi.ts`) is the only consumer and
 talks to the module through raw pointers.
 
@@ -13,7 +13,7 @@ talks to the module through raw pointers.
 - Tiny binary: the release profile (`opt-level = "z"`, `lto = "fat"`,
   `codegen-units = 1`, `panic = "abort"`, `strip = true`) plus a hand-rolled
   ABI yields a 240 KB raw / 88 KB gzip binary (see below).
-- Plain toolchain: `cargo build` is the whole build — no wasm-pack, no
+- Plain toolchain: `cargo build` is the whole build - no wasm-pack, no
   generated TS to keep in sync.
 
 ## Exports
@@ -35,7 +35,7 @@ Op codes for `call`: `0` forecast, `1` anomalies, `2` decompose,
 The result header and all channel buffers live in an internal bump arena and
 are **valid only until the next `call`** (which resets the arena). The caller
 must construct `Float64Array(memory.buffer, offset, len)` views *after* `call`
-returns and `.slice()` them immediately — wasm memory may grow and detach its
+returns and `.slice()` them immediately - wasm memory may grow and detach its
 buffer, and a subsequent call reuses the arena. The TS wrapper enforces this
 in `Abi.channel()`.
 
@@ -43,8 +43,8 @@ in `Abi.channel()`.
 
 | Code | Name | Meaning |
 |---|---|---|
-| 0 | — | Success |
-| 1 | `badConfig` | Config JSON failed to parse (or unknown keys — configs use `deny_unknown_fields`) |
+| 0 | - | Success |
+| 1 | `badConfig` | Config JSON failed to parse (or unknown keys - configs use `deny_unknown_fields`) |
 | 2 | `badOp` | Unknown op code |
 | 3 | `tooShort` | Series has fewer than 3 usable points |
 | 4 | `badParams` | Config parsed but a value is out of range (e.g. `horizon > 10000`) |
@@ -57,7 +57,7 @@ On failure the header is `{"ok": false, "code": "...", "error": "..."}`.
 - Keys are **snake_case**: `{"model": "stl_ets", "horizon": 48, "period": null}`.
 - TS camelCase is translated by the engine wrapper; e.g. `period: "auto"`
   becomes `period: null` in JSON, `maxPeriod` becomes `max_period`.
-- Values are scalars only — numbers, strings, booleans, null. Never arrays,
+- Values are scalars only - numbers, strings, booleans, null. Never arrays,
   never NaN/Infinity.
 - Unknown keys are errors (`serde(deny_unknown_fields)`).
 - Omitted fields fall back to the core defaults.
@@ -74,7 +74,7 @@ pointing at f64 arrays in linear memory:
 | decompose (2) | `trend`, `seasonal`, `resid`, plus `weights` when robust |
 | seasonality (3) | `acf`, `lags`, `periodogram`, `frequencies` |
 | changepoints (4) | `means` |
-| backtest (5) | none — rows are plain JSON in the header |
+| backtest (5) | none - rows are plain JSON in the header |
 | interpolate (6) | `y` |
 
 ## Rebuild

@@ -24,28 +24,28 @@ are thin layers over this API.
 
 ## Algorithm inventory
 
-- **STL-style robust decomposition** — local *linear* (degree-1) LOESS with
+- **STL-style robust decomposition** - local *linear* (degree-1) LOESS with
   tri-cube weights, cycle-subseries smoothing, low-pass filter, and a bisquare
   robust outer loop. Includes out-of-sample LOESS: `seasonal_project(h)`
   evaluates the cycle-subseries smoother `h` steps beyond the data, which is
   what makes seasonal forecasting work without refitting.
-- **Holt–Winters ETS(A,Ad,A)** — additive damped-trend exponential smoothing,
+- **Holt–Winters ETS(A,Ad,A)** - additive damped-trend exponential smoothing,
   fitted by Nelder–Mead on (alpha, beta, gamma, phi) with bounds enforced via
   sigmoid mapping; 3 restarts. Falls back to ETS(A,Ad,N) without a period.
-- **AR(p)** — ordinary least squares over a lag matrix, order selected by AICc
+- **AR(p)** - ordinary least squares over a lag matrix, order selected by AICc
   over p = 1..min(20, n/4); recursive forecasting.
-- **Naive / Seasonal-naive** — parameter-free baselines used as fallbacks and
+- **Naive / Seasonal-naive** - parameter-free baselines used as fallbacks and
   benchmarks.
-- **FFT-based ACF and periodogram** — radix-2 Cooley–Tukey, zero-padded to the
+- **FFT-based ACF and periodogram** - radix-2 Cooley–Tukey, zero-padded to the
   next power of two; spectral and ACF peak candidates are matched to rank
   seasonal periods (optional 10% Tukey taper on the periodogram).
-- **Four anomaly detectors** — STL-residual modified z-score, modified
+- **Four anomaly detectors** - STL-residual modified z-score, modified
   z-score on a rolling-median detrend, IQR fences, and an EWMA control chart.
-- **Binary-segmentation changepoints** — mean-shift gain statistic with a
+- **Binary-segmentation changepoints** - mean-shift gain statistic with a
   robust noise estimate.
-- **Rolling-origin backtesting** — last `folds x horizon` points held out;
+- **Rolling-origin backtesting** - last `folds x horizon` points held out;
   per-model RMSE / MAE / sMAPE plus empirical PI coverage.
-- **Bootstrap prediction intervals** — `paths` futures simulated by evolving
+- **Bootstrap prediction intervals** - `paths` futures simulated by evolving
   the fitted model with residuals resampled (with replacement) from a seeded
   xorshift RNG; intervals are the empirical quantiles.
 
@@ -111,8 +111,8 @@ runs exactly. The feature is off for the WASM target.
 
 | Situation | Model |
 |---|---|
-| Clear, stable seasonality (strength >= 0.5) | `stl_ets` — robust STL + ETS on the deseasonalized series |
-| Weak-to-moderate seasonality (0.2–0.5) | `ets` — full seasonal Holt–Winters |
+| Clear, stable seasonality (strength >= 0.5) | `stl_ets` - robust STL + ETS on the deseasonalized series |
+| Weak-to-moderate seasonality (0.2–0.5) | `ets` - full seasonal Holt–Winters |
 | Little or no seasonality, short series | `ar` (AICc-selected), or `ets` when n < 16 |
 | Baseline / sanity check | `snaive` (seasonal) or `naive` |
 
@@ -125,14 +125,14 @@ using the detected seasonal strength. Seasonal models require
 `cargo test -p isocline-core` (and `cargo test --workspace`) runs the
 verification gates in `tests/integration.rs`:
 
-- **Period recovery** — seasonality detection recovers p = 24, 7, and 168
+- **Period recovery** - seasonality detection recovers p = 24, 7, and 168
   on synthetic series (within a small tolerance), with strength > 0.6.
-- **Forecast quality** — `stl_ets` beats `snaive` on a holdout of trending
+- **Forecast quality** - `stl_ets` beats `snaive` on a holdout of trending
   seasonal data.
-- **Anomaly recall/precision** — >= 0.8 on injected ground-truth events.
-- **Changepoint localization** — detected within ±3 of the injected shift.
-- **PI calibration** — empirical coverage of the nominal-0.95 interval over
+- **Anomaly recall/precision** - >= 0.8 on injected ground-truth events.
+- **Changepoint localization** - detected within ±3 of the injected shift.
+- **PI calibration** - empirical coverage of the nominal-0.95 interval over
   200 simulated realizations lands in [0.88, 1.0].
-- **Determinism** — same seed produces byte-identical output channels.
-- **Edge cases** — n = 3 forecasts, n = 2 is `TooShort`, constant series
+- **Determinism** - same seed produces byte-identical output channels.
+- **Edge cases** - n = 3 forecasts, n = 2 is `TooShort`, constant series
   yields a flat forecast with no anomalies/changepoints/seasonality.

@@ -1,6 +1,10 @@
+<p align="center">
+  <img src="docs/media/banner.svg" alt="isocline: a slope field with the zero isocline traced in cyan, fanning into a forecast" width="880">
+</p>
+
 # isocline
 
-**Tiny, fast time-series intelligence — Rust → WASM → web.**
+**Tiny, fast time-series intelligence - Rust → WASM → web.**
 
 An augurs-style toolkit: a dependency-free Rust forecasting & anomaly-detection
 core, compiled to a 240 KB (88 KB gzipped) WASM module with a zero-dependency
@@ -45,10 +49,10 @@ PI coverage in [0.88, 1.0] over 200 realizations, and bitwise determinism.
 ## Repo layout
 
 ```
-crates/isocline-core      algorithms — std-only Rust, zero deps (rayon optional)
+crates/isocline-core      algorithms - std-only Rust, zero deps (rayon optional)
 crates/isocline-wasm      flat-ABI wasm bindings (no wasm-bindgen)
-packages/isocline         npm "isocline" — zero-dep TS engine wrapper
-packages/isocline-plot    npm "isocline-plot" — Observable Plot marks/plots
+packages/isocline         npm "isocline" - zero-dep TS engine wrapper
+packages/isocline-plot    npm "isocline-plot" - Observable Plot marks/plots
 packages/demo             interactive demo (Vite, vanilla TS)
 docs/                     ARCHITECTURE.md, ALGORITHMS.md
 CONTRACT.md               the normative cross-package contract
@@ -86,15 +90,15 @@ Server-side (scale up): use `isocline-core` directly from Rust with
 
 ## Design decisions
 
-- **Flat C ABI instead of wasm-bindgen** — zero JS runtime, plain
+- **Flat C ABI instead of wasm-bindgen** - zero JS runtime, plain
   `cargo build --target wasm32-unknown-unknown`, 240 KB binary (augurs:
   ~1 MB). Config rides in as short snake_case JSON; bulk data moves as
   `Float64Array` in/out of a bump arena (results valid until the next call).
-- **Zero-dependency core** — FFT, Nelder–Mead, Cholesky, and every algorithm
+- **Zero-dependency core** - FFT, Nelder–Mead, Cholesky, and every algorithm
   are hand-rolled in std-only Rust; nothing to audit, nothing to bloat.
-- **Determinism everywhere** — seeded RNG for all bootstrap simulation, so
+- **Determinism everywhere** - seeded RNG for all bootstrap simulation, so
   results are reproducible across wasm/native.
-- **Contract-first packages** — every package builds against `CONTRACT.md`,
+- **Contract-first packages** - every package builds against `CONTRACT.md`,
   which kept a wasm crate, two npm packages, and a demo app developed in
   parallel.
 
@@ -103,9 +107,9 @@ Server-side (scale up): use `isocline-core` directly from Rust with
 - Single seasonality period per series (strongest candidate wins).
 - Seasonality detection on very long, heavily-trending series (trend swamps
   the ACF): detrend first, or pass an explicit `period`.
-- No web workers — ops are fast enough to stay on-thread at demo scale; wrap
+- No web workers - ops are fast enough to stay on-thread at demo scale; wrap
   in a worker yourself if you need jank-free 100k+ point interaction.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).

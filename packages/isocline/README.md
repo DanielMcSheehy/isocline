@@ -36,16 +36,16 @@ const iso = await loadIsocline(); // resolves once; reuse the instance
 
 `loadIsocline(wasmBytes?)` accepts optional explicit bytes:
 
-- **Browser (default)** — fetches the sibling `./isocline.wasm` asset
+- **Browser (default)** - fetches the sibling `./isocline.wasm` asset
   relative to the module URL (works with Vite, webpack asset modules, CDNs).
-- **Node (default)** — falls back to `node:fs/promises` on the same URL.
-- **Custom bytes** — pass an `ArrayBuffer | Uint8Array` to bundle or fetch
+- **Node (default)** - falls back to `node:fs/promises` on the same URL.
+- **Custom bytes** - pass an `ArrayBuffer | Uint8Array` to bundle or fetch
   the binary yourself (e.g. inlined, or from your own CDN with SRI).
 
 `loadIsocline` verifies the wasm module's ABI version (must be `1`) and
 throws `IsoclineError` with code `"internal"` on mismatch.
 
-For example data, the package also exports `genSeries` — a seeded synthetic
+For example data, the package also exports `genSeries` - a seeded synthetic
 generator with ground-truth anomaly/changepoint labels (used below).
 
 ## API
@@ -212,14 +212,14 @@ try {
 Every op is deterministic given the same inputs and `seed` (default 42):
 the bootstrap uses a seeded xorshift RNG, and the same seed reproduces
 byte-identical `point`/`lower`/`upper`/`paths`. Run the same call twice and
-you get the same forecast — there is no hidden global RNG state.
+you get the same forecast - there is no hidden global RNG state.
 
 ## Performance tips
 
 - **`paths` drives cost.** Prediction intervals come from simulating
   `paths` futures; 200 is a good default, drop to 50–100 or `0` for
   interactive explorations, raise it for tighter interval tails.
-- **NaNs are interpolated** before every op — cheap, but pass clean data
+- **NaNs are interpolated** before every op - cheap, but pass clean data
   when you can.
 - Reuse one engine instance; loading compiles the wasm module once.
 - Larger `horizon` costs little beyond the bootstrap; `backtest` cost is
