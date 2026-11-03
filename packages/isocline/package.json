@@ -2,6 +2,19 @@
   "name": "isocline",
   "version": "0.1.0",
   "description": "Tiny, fast time-series forecasting & anomaly detection for the web (WASM)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DanielMcSheehy/isocline.git",
+    "directory": "packages/isocline"
+  },
+  "keywords": [
+    "time-series",
+    "forecasting",
+    "anomaly-detection",
+    "wasm",
+    "rust"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,7 +29,11 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit"
+    "check": "tsc -p tsconfig.json --noEmit",
+    "prepack": "npm run build && node --input-type=module -e \"import {accessSync} from 'node:fs'; accessSync('dist/isocline.wasm')\""
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

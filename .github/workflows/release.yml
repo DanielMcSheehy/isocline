@@ -1,0 +1,53 @@
+name: Release
+
+# Publishes `isocline` and `isocline-plot` when a version tag is pushed:
+#   npm version minor -w isocline
+#   npm version minor -w isocline-plot --no-git-tag-version
+#   git add -A && git commit -m "v0.2.0" && git tag v0.2.0 && git push && git push --tags
+# Both packages must carry the tag's version.
+# Auth is npm trusted publishing (OIDC, no secret). After the first manual
+# publish, bind this workflow once:
+#   npm trust github isocline --repo DanielMcSheehy/isocline --file release.yml -y
+#   npm trust github isocline-plot --repo DanielMcSheehy/isocline --file release.yml -y
+# A new trust config must successfully publish within 2 days or it expires.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@latest
+      - run: npm ci
+      - name: Check that the tag matches the package versions
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          for p in packages/isocline/package.json packages/isocline-plot/package.json; do
+            V=$(node -p "require('./$p').version")
+            [ "$V" = "$TAG" ] || { echo "$p is $V but tag is $TAG"; exit 1; }
+          done
+      - run: cargo test --workspace
+      - run: npm run build:wasm
+      - run: npm run build:isocline && npm run build:plot
+      - run: npm run test:smoke
+      - name: Publish isocline
+        run: npm publish --access public -w isocline
+      - name: Publish isocline-plot
+        run: npm publish --access public -w isocline-plot

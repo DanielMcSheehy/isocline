@@ -2,6 +2,18 @@
   "name": "isocline-plot",
   "version": "0.1.0",
   "description": "Observable Plot visualization layer for isocline results",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DanielMcSheehy/isocline.git",
+    "directory": "packages/isocline-plot"
+  },
+  "keywords": [
+    "isocline",
+    "observable-plot",
+    "visualization",
+    "time-series"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,10 +29,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
+    "prepack": "npm run build",
     "preview": "vite dev examples --config examples/vite.config.ts"
   },
   "peerDependencies": {
-    "@observablehq/plot": "^0.6.17"
+    "@observablehq/plot": "^0.6.17",
+    "isocline": "^0.1.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "@observablehq/plot": "^0.6.17",
