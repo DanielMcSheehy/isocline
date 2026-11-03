@@ -32,7 +32,7 @@
           "plot",
           "obsplot"
         ],
-        "note": "results become Observable Plot marks"
+        "note": "results become ECharts options"
       },
       {
         "id": "scale-up",
@@ -182,7 +182,7 @@
     {
       "id": "obsplot",
       "type": "external",
-      "label": "Observable Plot",
+      "label": "Apache ECharts",
       "sublabel": "peer dependency",
       "pos": [
         250,
@@ -312,7 +312,7 @@
       "items": [
         "240 KB wasm binary, 88 KB gzipped, no wasm-bindgen runtime",
         "zero-dependency TypeScript wrapper, results copied out as Float64Array",
-        "Observable Plot marks layer with shared dark theme"
+        "Apache ECharts options layer with shared dark theme"
       ]
     },
     {

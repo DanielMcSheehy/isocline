@@ -1,7 +1,8 @@
 // Anomalies tab: method picker, adaptive threshold slider, ewma lambda,
-// direction filter, flagged-point plot, precision/recall vs ground truth.
+// direction filter, lookback window, flagged-point plot with plain-language
+// explanations, precision/recall vs ground truth.
 import { anomalyPlot, anomalySplit, fmt } from "isocline-plot";
-import type { AnomalyMethod } from "isocline";
+import { explainAnomalies, type AnomalyMethod, type DurationString } from "isocline";
 import { state } from "../state.js";
 import { clearNode, controlRow, debounce, el, fmtPct, outputFor, rangeInput, runCompute, setChipValues } from "../util.js";
 
@@ -35,17 +36,23 @@ export function mountAnomalies(root: HTMLElement): () => Promise<void> {
     dirSel.append(el("option", { value: v, text: t }));
   }
 
+  const lookbackSel = el("select", { id: "an-lookback" });
+  for (const [v, t] of [["", "all history"], ["7d", "last 7 days"], ["3d", "last 3 days"], ["24h", "last 24 hours"]] as const) {
+    lookbackSel.append(el("option", { value: v, text: t }));
+  }
+
   const controls = el("div", { class: "tab-controls" });
   controls.append(controlRow("method", methodSel));
 
   const thresholdCtl = el("div", { class: "ctl" });
   thresholdCtl.append(thresholdLabel, threshold);
-  controls.append(thresholdCtl, lambdaRow, controlRow("direction", dirSel));
+  controls.append(thresholdCtl, lambdaRow, controlRow("direction", dirSel), controlRow("lookback", lookbackSel));
 
   const chips = el("div", { class: "chips" });
   const notes = el("div", { class: "note" });
   const plotArea = el("div", { class: "plot-area" });
-  root.append(controls, chips, notes, plotArea);
+  const why = el("div", { class: "explanations" });
+  root.append(controls, chips, notes, plotArea, why);
 
   function syncThresholdUI(method: AnomalyMethod): void {
     const r = thresholdRange(method);
@@ -63,11 +70,20 @@ export function mountAnomalies(root: HTMLElement): () => Promise<void> {
     await runCompute(plotArea, (engine) => {
       const series = state.series();
       const method = methodSel.value as AnomalyMethod;
+      const lookback = (lookbackSel.value || undefined) as DurationString | undefined;
+      // lookback is a post-result filter: detection still sees the full history.
+      // now: "latest" anchors it to the synthetic data instead of the wall clock.
       const res = engine.detectAnomalies(series, {
         method,
         threshold: Number(threshold.value),
         lambda: Number(lambda.value),
         direction: dirSel.value as "both" | "high" | "low",
+        ...(lookback ? { lookback, now: "latest" as const } : {}),
+      });
+      const explanations = explainAnomalies(series, res, {
+        name: "the series",
+        period: engine.seasonality(series).bestPeriod,
+        changepoints: engine.changepoints(series),
       });
 
       clearNode(plotArea);
@@ -75,12 +91,21 @@ export function mountAnomalies(root: HTMLElement): () => Promise<void> {
         anomalyPlot(series, res, {
           width: Math.max(320, plotArea.clientWidth - 20),
           height: 340,
+          explanations,
         }),
       );
 
-      // precision/recall vs generator ground truth (works with mock — the
-      // ground truth comes from genSeries itself)
-      const gt = state.data.anomalies;
+      clearNode(why);
+      for (const x of [...explanations].sort((a, b) => b.score / b.threshold - a.score / a.threshold).slice(0, 6)) {
+        const item = el("div", { class: `explanation sev-${x.severity}` });
+        item.append(el("div", { class: "explanation-head", text: x.headline }), el("div", { class: "explanation-why", text: x.reasons.join(" ") }));
+        why.append(item);
+      }
+
+      // precision/recall vs generator ground truth inside the window (works with
+      // mock — the ground truth comes from genSeries itself)
+      const from = res.window?.from ?? null;
+      const gt = state.data.anomalies.filter((i) => from === null || Number(series.t?.[i]) >= from);
       const gtSet = new Set(gt);
       const detectedIdx = res.anomalies.map((a) => a.index);
       const matched = detectedIdx.filter((i) => gtSet.has(i)).length;
@@ -91,7 +116,7 @@ export function mountAnomalies(root: HTMLElement): () => Promise<void> {
 
       setChipValues(chips, [
         ["method", res.method, "accent"],
-        ["detected", String(detected)],
+        ["detected", res.window ? `${detected} of ${res.window.total}` : String(detected)],
         ["ground truth", String(gt.length)],
         ["precision", fmtPct(precision), precision >= 0.8 ? "good" : precision < 0.5 ? "bad" : ""],
         ["recall", fmtPct(recall), recall >= 0.8 ? "good" : recall < 0.5 ? "bad" : ""],
@@ -99,7 +124,9 @@ export function mountAnomalies(root: HTMLElement): () => Promise<void> {
         ["dips", String(dips)],
         ["threshold", fmt(res.threshold)],
       ]);
-      notes.textContent = "";
+      notes.textContent = explanations.length
+        ? "Why: the most severe flagged points, explained (hover a marker for its explanation)."
+        : "";
     });
   }
 
@@ -117,6 +144,7 @@ export function mountAnomalies(root: HTMLElement): () => Promise<void> {
     refreshSoon();
   });
   dirSel.addEventListener("change", refresh);
+  lookbackSel.addEventListener("change", refresh);
 
   const refreshSoon = debounce(refresh, 150);
   void refresh();

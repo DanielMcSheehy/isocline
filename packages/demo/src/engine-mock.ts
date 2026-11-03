@@ -26,6 +26,7 @@
 
 import {
   IsoclineError,
+  filterAnomalies,
   mulberry32,
   type Anomaly,
   type AnomalyMethod,
@@ -884,7 +885,7 @@ export function createMockEngine(): Isocline {
     }
     anomalies.sort((a, b) => a.index - b.index);
 
-    return { method, threshold, anomalies, scores, expected };
+    return filterAnomalies(series, { method, threshold, anomalies, scores, expected }, opts);
   }
 
   function decompose(series: SeriesInput, opts: DecomposeOptions = {}): DecomposeResult {

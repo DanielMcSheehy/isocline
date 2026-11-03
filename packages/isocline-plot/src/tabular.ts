@@ -1,14 +1,15 @@
 // Tabular detector visualizations (CONTRACT §11): correlation, majority,
 // category outlier, low variance. Non-temporal — x is never a time axis.
-import * as Plot from "@observablehq/plot";
+import type { EChartsOption } from "echarts";
 import type {
   CorrelationResult,
   MajorityResult,
   CategoryOutlierResult,
   LowVarianceResult,
 } from "isocline";
-import { C, isoclineTheme, applyIsoclineCss, fmt } from "./theme.js";
-import type { MarkSpec } from "./forecast.js";
+import { C, isoclineTheme, grid, title, tooltip, xAxis, yAxis, fmt, fmtTick } from "./theme.js";
+import { tipList, tipMarker, tipValue, type IsoclineSeriesOption, type TipParams } from "./util.js";
+import { renderChart } from "./render.js";
 
 export interface TabularVizOptions {
   height?: number;
@@ -17,16 +18,19 @@ export interface TabularVizOptions {
   yLabel?: string;
 }
 
-const INK_STROKE = "#0b0e14"; // dark halo around colored dots (matches anomaly/changepoint)
+const INK_STROKE = C.bg; // dark halo around colored dots (matches anomaly/changepoint)
+
+/** Headline in the top-right margin (the y-axis name owns the top-left). */
+const headline = (text: string) => title(text, { left: undefined, right: 16, top: 4 });
 
 /** Finite (a, b) pairs, aligned by index; NaN/Infinity filtered. */
-function pairsOf(a: ArrayLike<number>, b: ArrayLike<number>): { x: number; y: number }[] {
+function pairsOf(a: ArrayLike<number>, b: ArrayLike<number>): [number, number][] {
   const n = Math.min(a.length, b.length);
-  const out: { x: number; y: number }[] = [];
+  const out: [number, number][] = [];
   for (let i = 0; i < n; i++) {
     const x = Number(a[i]);
     const y = Number(b[i]);
-    if (Number.isFinite(x) && Number.isFinite(y)) out.push({ x, y });
+    if (Number.isFinite(x) && Number.isFinite(y)) out.push([x, y]);
   }
   return out;
 }
@@ -47,44 +51,49 @@ export function correlationHeadline(res: CorrelationResult): string {
   return `r = ${fmt(res.r)} · n = ${fmt(res.n)} · ${sig}`;
 }
 
-export function correlationMarks(
+export function correlationOption(
   a: ArrayLike<number>,
   b: ArrayLike<number>,
   res: CorrelationResult,
   opts: TabularVizOptions = {},
-): MarkSpec {
+): EChartsOption {
   const pts = pairsOf(a, b);
-  const marks: Plot.Markish[] = [
-    Plot.dot(pts, { x: "x", y: "y", fill: C.muted, fillOpacity: 0.7, r: 2.5 }),
+  const xName = opts.xLabel ?? "a";
+  const yName = opts.yLabel ?? "b";
+  const series: IsoclineSeriesOption[] = [
+    { type: "scatter", name: "pairs", data: pts, symbolSize: 5, itemStyle: { color: C.muted, opacity: 0.7 } },
   ];
   // OLS fit line across the a-domain (cyan); skipped when the domain is degenerate.
-  const xs = extentOf(pts.map((p) => p.x));
+  const xs = extentOf(pts.map((p) => p[0]));
   const slope = Number(res.slope);
   const intercept = Number(res.intercept);
   if (xs && Number.isFinite(slope) && Number.isFinite(intercept) && xs[0] !== xs[1]) {
-    const fit = [
-      { x: xs[0], y: slope * xs[0] + intercept },
-      { x: xs[1], y: slope * xs[1] + intercept },
-    ];
-    marks.push(Plot.line(fit, { x: "x", y: "y", stroke: C.cyan, strokeWidth: 1.6 }));
+    series.push({
+      type: "line",
+      name: "OLS fit",
+      data: xs.map((x) => [x, slope * x + intercept]),
+      symbol: "none",
+      silent: true,
+      tooltip: { show: false },
+      lineStyle: { color: C.cyan, width: 1.6 },
+      z: 3,
+    });
   }
-  marks.push(
-    Plot.text([correlationHeadline(res)], {
-      frameAnchor: "top-left",
-      dx: 8,
-      dy: 14,
-      fontSize: 12,
-      fill: C.ink,
-    }),
-  );
-  const plotOptions: Partial<Plot.PlotOptions> = {
+  return {
     ...isoclineTheme,
-    x: { ...isoclineTheme.x, nice: true, label: opts.xLabel ?? "a" },
-    y: { ...isoclineTheme.y, label: opts.yLabel ?? "b" },
-    height: opts.height ?? 320,
+    title: headline(correlationHeadline(res)),
+    grid: grid(),
+    tooltip: tooltip({
+      trigger: "item",
+      formatter: (p: TipParams | TipParams[]) =>
+        tipList(p)
+          .map((it) => `${xName} ${fmt(tipValue(it, 0))}<br/>${yName} ${fmt(tipValue(it, 1))}`)
+          .join(""),
+    }),
+    xAxis: xAxis({ type: "value", name: xName, scale: true }),
+    yAxis: yAxis({ type: "value", name: yName }),
+    series,
   };
-  if (opts.width) plotOptions.width = opts.width;
-  return { marks, plotOptions };
 }
 
 export function correlationPlot(
@@ -93,11 +102,7 @@ export function correlationPlot(
   res: CorrelationResult,
   opts: TabularVizOptions = {},
 ): HTMLElement {
-  applyIsoclineCss();
-  const { marks, plotOptions } = correlationMarks(a, b, res, opts);
-  const fig = Plot.plot({ ...plotOptions, marks } as Plot.PlotOptions);
-  fig.classList.add("isocline-plot");
-  return fig as HTMLElement;
+  return renderChart(correlationOption(a, b, res, opts), { width: opts.width, height: opts.height ?? 320 });
 }
 
 /** `NN.N%` label text (spec form — one decimal, always with the % sign). */
@@ -114,45 +119,62 @@ export function majorityBars(res: MajorityResult): MajorityRow[] {
   return res.counts.map((c) => ({ label: c.label, proportion: c.proportion }));
 }
 
-export function majorityMarks(res: MajorityResult, opts: TabularVizOptions = {}): MarkSpec {
-  const rows = majorityBars(res);
-  const dom = res.dominant === null ? [] : rows.filter((r) => r.label === res.dominant);
-  const rest = rows.filter((r) => r.label !== res.dominant);
-  const marks: Plot.Markish[] = [
-    Plot.barX(rest, { x: "proportion", y: "label", fill: C.muted }),
-    Plot.barX(dom, { x: "proportion", y: "label", fill: C.cyan }),
-    // dashed rule at the majority threshold
-    Plot.ruleX([res.threshold], { stroke: C.amber, strokeDasharray: "4,3", strokeWidth: 1.1 }),
-    Plot.text([{ x: res.threshold, t: `threshold ${pctLabel(res.threshold)}` }], {
-      x: "x",
-      text: "t",
-      frameAnchor: "top",
-      dy: 4,
-      fontSize: 9,
-      fill: C.amber,
-    }),
-    // right-margin percentage labels
-    Plot.text(rows, { x: "proportion", y: "label", text: (d: MajorityRow) => pctLabel(d.proportion), textAnchor: "start", dx: 5, fill: C.ink, fontSize: 10 }),
-  ];
-  const plotOptions: Partial<Plot.PlotOptions> = {
+/** Horizontal bars: category labels on y (first row on top), labelled at the bar end. */
+export function horizontalBarsOption(
+  rows: { label: string; value: number; color: string }[],
+  o: { xName: string; xMax?: number; xFormatter: (v: number) => string; label: (v: number) => string; markLine?: IsoclineSeriesOption["markLine"] },
+): EChartsOption {
+  return {
     ...isoclineTheme,
-    marginLeft: Math.max(isoclineTheme.marginLeft ?? 0, 92),
-    marginRight: Math.max(isoclineTheme.marginRight ?? 0, 56),
-    x: { ...isoclineTheme.x, domain: [0, 1], tickFormat: "%", label: opts.xLabel ?? "proportion", grid: true },
-    // fixed domain keeps bar order identical to res.counts (desc) across both marks
-    y: { ...isoclineTheme.y, grid: false, domain: rows.map((r) => r.label) },
-    height: opts.height ?? 24 + 26 * rows.length,
+    grid: grid({ top: 22, right: 56 }),
+    tooltip: tooltip({
+      trigger: "item",
+      formatter: (p: TipParams | TipParams[]) =>
+        tipList(p)
+          .map((it) => `${tipMarker(it)}${it.name} ${o.label(Number(it.value))}`)
+          .join(""),
+    }),
+    xAxis: xAxis({ type: "value", name: o.xName, min: 0, max: o.xMax, axisLabel: { formatter: o.xFormatter } }),
+    yAxis: yAxis({ type: "category", data: rows.map((r) => r.label), inverse: true, name: "", axisTick: { show: false } }),
+    series: [
+      {
+        type: "bar",
+        name: "bars",
+        data: rows.map((r) => ({ value: r.value, itemStyle: { color: r.color } })),
+        barCategoryGap: "18%",
+        label: { show: true, position: "right", color: C.ink, fontSize: 10, formatter: (p: TipParams) => o.label(Number(p.value)) },
+        markLine: o.markLine,
+      },
+    ],
   };
-  if (opts.width) plotOptions.width = opts.width;
-  return { marks, plotOptions };
+}
+
+export function majorityOption(res: MajorityResult, opts: TabularVizOptions = {}): EChartsOption {
+  const rows = majorityBars(res).map((r) => ({
+    label: r.label,
+    value: r.proportion,
+    color: r.label === res.dominant ? C.cyan : C.muted,
+  }));
+  return horizontalBarsOption(rows, {
+    xName: opts.xLabel ?? "proportion",
+    xMax: 1,
+    xFormatter: (v) => `${Math.round(v * 100)}%`,
+    label: pctLabel,
+    // dashed rule at the majority threshold
+    markLine: {
+      silent: true,
+      symbol: "none",
+      lineStyle: { color: C.amber, type: [4, 3], width: 1.1 },
+      // y is inverse (first row on top), so the line starts at the top edge
+      label: { formatter: `threshold ${pctLabel(res.threshold)}`, color: C.amber, fontSize: 9, position: "start" },
+      data: [{ xAxis: res.threshold }],
+    },
+  });
 }
 
 export function majorityPlot(res: MajorityResult, opts: TabularVizOptions = {}): HTMLElement {
-  applyIsoclineCss();
-  const { marks, plotOptions } = majorityMarks(res, opts);
-  const fig = Plot.plot({ ...plotOptions, marks } as Plot.PlotOptions);
-  fig.classList.add("isocline-plot");
-  return fig as HTMLElement;
+  const height = opts.height ?? 44 + 26 * res.counts.length;
+  return renderChart(majorityOption(res, opts), { width: opts.width, height });
 }
 
 /** Distance of a value from the [q1, q3] band, in IQR units ("z-score-ish"). */
@@ -182,55 +204,64 @@ export function categoryRows(res: CategoryOutlierResult): CategoryRow[] {
 }
 
 function outlierTitle(d: CategoryRow): string {
-  if (!d.isOutlier) return `${d.label}\nvalue ${fmt(d.value)}\nwithin fences`;
+  if (!d.isOutlier) return `<b>${d.label}</b><br/>value ${fmt(d.value)}<br/>within fences`;
   const side = d.direction === "high" ? "above Q3" : "below Q1";
-  return `${d.label}\nvalue ${fmt(d.value)}\n${fmt(d.dist)}×IQR ${side}`;
+  return `<b>${d.label}</b><br/>value ${fmt(d.value)}<br/>${fmt(d.dist)}×IQR ${side}`;
 }
 
-export function categoryOutlierMarks(res: CategoryOutlierResult, opts: TabularVizOptions = {}): MarkSpec {
+export function categoryOutlierOption(res: CategoryOutlierResult, opts: TabularVizOptions = {}): EChartsOption {
   const rows = categoryRows(res);
-  const normal = rows.filter((r) => !r.isOutlier);
-  const high = rows.filter((r) => r.isOutlier && r.direction === "high");
-  const low = rows.filter((r) => r.isOutlier && r.direction === "low");
-  const marks: Plot.Markish[] = [
-    // shaded IQR band (q1..q3) spanning the full width, then dashed fences
-    Plot.rectY([{ y1: res.q1, y2: res.q3 }], {
-      y1: "y1",
-      y2: "y2",
-      fill: C.amber,
-      fillOpacity: 0.08,
-    }),
-    Plot.ruleY([res.lowerFence, res.upperFence], {
-      stroke: C.amber,
-      strokeDasharray: "4,3",
-      strokeWidth: 1.1,
-    }),
-    Plot.dotX(normal, { x: "label", y: "value", fill: C.cyan, fillOpacity: 0.55, r: 3.2, stroke: INK_STROKE, strokeWidth: 0.8 }),
-    Plot.dotX(high, { x: "label", y: "value", fill: C.red, r: 4, stroke: INK_STROKE, strokeWidth: 0.8 }),
-    Plot.dotX(low, { x: "label", y: "value", fill: C.blue, r: 4, stroke: INK_STROKE, strokeWidth: 0.8 }),
-  ];
-  if (rows.length) {
-    marks.push(
-      Plot.tip(rows, { x: "label", y: "value", anchor: "bottom", title: outlierTitle }),
-    );
-  }
-  const rotate = rows.some((r) => r.label.length > 8) ? 30 : 0;
-  const plotOptions: Partial<Plot.PlotOptions> = {
-    ...isoclineTheme,
-    x: { ...isoclineTheme.x, tickRotate: rotate, label: opts.xLabel ?? "" },
-    y: { ...isoclineTheme.y, nice: true, label: opts.yLabel ?? "value" },
-    height: opts.height ?? 320,
+  const dots = (name: string, data: CategoryRow[], color: string, size: number, opacity: number): IsoclineSeriesOption => ({
+    type: "scatter",
+    name,
+    data: data.map((r) => [r.label, r.value]),
+    symbolSize: size,
+    itemStyle: { color, opacity, borderColor: INK_STROKE, borderWidth: 0.8 },
+    z: 5,
+    tooltip: {
+      formatter: (p: TipParams | TipParams[]) =>
+        tipList(p)
+          .map((it) => data[it.dataIndex])
+          .map((r) => (r ? outlierTitle(r) : ""))
+          .join(""),
+    },
+  });
+  const normal = dots("within", rows.filter((r) => !r.isOutlier), C.cyan, 6.4, 0.55);
+  // shaded IQR band (q1..q3) spanning the full width, then dashed fences
+  normal.markArea = {
+    silent: true,
+    itemStyle: { color: C.amber, opacity: 0.08 },
+    data: [[{ yAxis: res.q1 }, { yAxis: res.q3 }]],
   };
-  if (opts.width) plotOptions.width = opts.width;
-  return { marks, plotOptions };
+  normal.markLine = {
+    silent: true,
+    symbol: "none",
+    label: { show: false },
+    lineStyle: { color: C.amber, type: [4, 3], width: 1.1 },
+    data: [{ yAxis: res.lowerFence }, { yAxis: res.upperFence }],
+  };
+  const rotate = rows.some((r) => r.label.length > 8) ? 30 : 0;
+  return {
+    ...isoclineTheme,
+    grid: grid(),
+    tooltip: tooltip({ trigger: "item" }),
+    xAxis: xAxis({
+      type: "category",
+      data: rows.map((r) => r.label),
+      name: opts.xLabel ?? "",
+      axisLabel: { rotate, interval: 0 },
+    }),
+    yAxis: yAxis({ type: "value", name: opts.yLabel ?? "value" }),
+    series: [
+      normal,
+      dots("high", rows.filter((r) => r.isOutlier && r.direction === "high"), C.red, 8, 1),
+      dots("low", rows.filter((r) => r.isOutlier && r.direction === "low"), C.blue, 8, 1),
+    ],
+  };
 }
 
 export function categoryOutlierPlot(res: CategoryOutlierResult, opts: TabularVizOptions = {}): HTMLElement {
-  applyIsoclineCss();
-  const { marks, plotOptions } = categoryOutlierMarks(res, opts);
-  const fig = Plot.plot({ ...plotOptions, marks } as Plot.PlotOptions);
-  fig.classList.add("isocline-plot");
-  return fig as HTMLElement;
+  return renderChart(categoryOutlierOption(res, opts), { width: opts.width, height: opts.height ?? 320 });
 }
 
 export interface VariancePoint {
@@ -252,38 +283,15 @@ export function lowVarianceHeadline(res: LowVarianceResult): string {
   return `cv = ${fmt(res.cv)} · ${res.isFlat ? "flat" : "not flat"}`;
 }
 
-export function lowVarianceMarks(
+export function lowVarianceOption(
   values: ArrayLike<number>,
   res: LowVarianceResult,
   opts: TabularVizOptions = {},
-): MarkSpec {
+): EChartsOption {
   const pts = variancePoints(values);
   const mean = Number(res.mean);
   const sd = Math.max(Number(res.stdDev) || 0, 0);
-  const marks: Plot.Markish[] = [];
-  if (pts.length && Number.isFinite(mean) && Number.isFinite(sd)) {
-    // mean ± stdDev band, spanning the x-domain
-    marks.push(
-      Plot.areaY(
-        [
-          { x: pts[0]!.x, y1: mean - sd, y2: mean + sd },
-          { x: pts[pts.length - 1]!.x, y1: mean - sd, y2: mean + sd },
-        ],
-        { x: "x", y1: "y1", y2: "y2", fill: C.amber, fillOpacity: 0.12, curve: "linear" },
-      ),
-    );
-  }
-  marks.push(
-    Plot.ruleY([mean], { stroke: C.amber, strokeDasharray: "4,3", strokeWidth: 1.1 }),
-    Plot.line(pts, { x: "x", y: "y", stroke: C.muted, strokeWidth: 1 }),
-    Plot.text([lowVarianceHeadline(res)], {
-      frameAnchor: "top-left",
-      dx: 8,
-      dy: 14,
-      fontSize: 12,
-      fill: C.ink,
-    }),
-  );
+  const finite = Number.isFinite(mean) && Number.isFinite(sd);
   // y-domain padded ±max(3σ, 1e-9) so flatness is visible; widened (never
   // clipped) when the series itself strays beyond the band.
   const pad = Math.max(3 * sd, 1e-9);
@@ -293,14 +301,55 @@ export function lowVarianceMarks(
     if (p.y < lo) lo = p.y;
     if (p.y > hi) hi = p.y;
   }
-  const plotOptions: Partial<Plot.PlotOptions> = {
+  const yName = opts.yLabel ?? "value";
+  return {
     ...isoclineTheme,
-    x: { ...isoclineTheme.x, nice: true, label: opts.xLabel ?? "index" },
-    y: { ...isoclineTheme.y, domain: [lo, hi], label: opts.yLabel ?? "value" },
-    height: opts.height ?? 320,
+    title: headline(lowVarianceHeadline(res)),
+    grid: grid(),
+    tooltip: tooltip({
+      trigger: "axis",
+      axisPointer: { type: "line", lineStyle: { color: "rgba(255,255,255,0.25)" } },
+      formatter: (p: TipParams | TipParams[]) =>
+        tipList(p)
+          .map((it) => `#${tipValue(it, 0)}<br/>${yName} ${fmtTick(tipValue(it, 1))}<br/>mean ${fmtTick(mean)} ± ${fmt(sd)}`)
+          .join(""),
+    }),
+    xAxis: xAxis({ type: "value", name: opts.xLabel ?? "index", min: "dataMin", max: "dataMax" }),
+    yAxis: yAxis({
+      type: "value",
+      name: yName,
+      min: finite ? lo : undefined,
+      max: finite ? hi : undefined,
+      // the padded extent is not a round tick; label only the interior ticks
+      axisLabel: { showMinLabel: !finite, showMaxLabel: !finite },
+    }),
+    series: [
+      {
+        type: "line",
+        name: yName,
+        data: pts.map((p) => [p.x, p.y]),
+        symbol: "none",
+        lineStyle: { color: C.muted, width: 1 },
+        itemStyle: { color: C.muted },
+        markArea:
+          pts.length && finite
+            ? {
+                silent: true,
+                itemStyle: { color: C.amber, opacity: 0.12 },
+                // mean ± stdDev band, spanning the x-domain
+                data: [[{ yAxis: mean - sd }, { yAxis: mean + sd }]],
+              }
+            : undefined,
+        markLine: {
+          silent: true,
+          symbol: "none",
+          label: { show: false },
+          lineStyle: { color: C.amber, type: [4, 3], width: 1.1 },
+          data: finite ? [{ yAxis: mean }] : [],
+        },
+      },
+    ],
   };
-  if (opts.width) plotOptions.width = opts.width;
-  return { marks, plotOptions };
 }
 
 export function lowVariancePlot(
@@ -308,9 +357,5 @@ export function lowVariancePlot(
   res: LowVarianceResult,
   opts: TabularVizOptions = {},
 ): HTMLElement {
-  applyIsoclineCss();
-  const { marks, plotOptions } = lowVarianceMarks(values, res, opts);
-  const fig = Plot.plot({ ...plotOptions, marks } as Plot.PlotOptions);
-  fig.classList.add("isocline-plot");
-  return fig as HTMLElement;
+  return renderChart(lowVarianceOption(values, res, opts), { width: opts.width, height: opts.height ?? 320 });
 }

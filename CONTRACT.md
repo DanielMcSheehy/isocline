@@ -2,7 +2,7 @@
 
 Isocline is a tiny, fast time-series engine: a dependency-free Rust core
 (`crates/isocline-core`), flat-ABI WASM bindings (`crates/isocline-wasm`), a
-zero-dependency TypeScript package (`packages/isocline`), an Observable Plot
+zero-dependency TypeScript package (`packages/isocline`), an Apache ECharts
 visualization layer (`packages/isocline-plot`), and a Vite demo
 (`packages/demo`).
 
@@ -31,7 +31,7 @@ isocline/
 │   │       ├── abi.ts          # wasm loader + memory marshalling
 │   │       ├── engine.ts       # high-level API
 │   │       └── index.ts
-│   ├── isocline-plot/            # npm "isocline-plot": Observable Plot marks/plots
+│   ├── isocline-plot/            # npm "isocline-plot": ECharts options/plots
 │   └── demo/                   # Vite site, private
 └── docs/
 ```
@@ -396,24 +396,29 @@ Rust unit tests embed the same equations (their own tiny generator) so both
 sides test against identical ground truth patterns (constants in tests need
 not match JS exactly — but the *shape* of the data must).
 
-## 6. isocline-plot API (Observable Plot)
+## 6. isocline-plot API (Apache ECharts)
 
-Peer dependency: `@observablehq/plot ^0.6`. Every function comes in two
-forms: `*Marks(...)` returning `Plot.Markish[]` + partial plot options for
-composition, and `*Plot(...)` returning a rendered `Plot.plot(...)` node.
+Peer dependency: `echarts ^5.6.0` (tree-shaken `echarts/core`; only line,
+bar, scatter, heatmap + grid/tooltip/title/markLine/markArea/markPoint/
+visualMap and both renderers are registered). Every family comes in two
+forms: `*Option(...)` returning an `EChartsOption` for composition
+(`setOption`, `renderSVG`), and `*Plot(...)` returning a mounted
+`div.isocline-plot` (explicit initial size, ResizeObserver-driven resize).
 
 ```ts
 import * as PP from "isocline-plot";
 
 PP.forecastPlot(series, forecast, opts?)     // history + forecast + PI band + optional spaghetti paths
-PP.forecastMarks(series, forecast, opts?)
+PP.forecastOption(series, forecast, opts?)
 PP.anomalyPlot(series, anomalyResult, opts?) // line + flagged points (spike ▲ red / dip ▼ blue) + expected line
-PP.anomalyMarks(...)
-PP.decomposePlot(decomp, opts?)              // 3 vertically-stacked facets: trend/seasonal/resid
+PP.anomalyOption(...)                        // opts.explanations: per-index tooltip prose
+PP.decomposePlot(series, decomp, opts?)      // 3 stacked grids, shared x, independent y: trend/seasonal/resid
 PP.seasonalityPlot(seasonality, opts?)       // ACF + periodogram side-by-side, best period annotated
 PP.changepointPlot(series, cpResult, opts?)  // line + step means + vertical rules at changepoints
-PP.backtestPlot(backtest, opts?)             // metric heatmap (Plot.cell)
-PP.isoclineTheme                              // shared dark plot defaults (see §7)
+PP.backtestPlot(backtest, opts?)             // metric heatmap (heatmap series, rank visualMap)
+PP.decomposeOption / seasonalityOption / changepointOption / backtestOption
+PP.renderChart(option, opts?) / PP.renderSVG(option, opts?) / PP.disposePlots(root)
+PP.isoclineTheme                              // shared dark EChartsOption base (see §7)
 ```
 
 - All functions accept plain contract result objects — they must work with
@@ -434,7 +439,7 @@ font: ui-monospace, SFMono-Regular, Menlo, monospace (numbers/labels)
 radius: 10px; spacing: 8px grid
 ```
 
-Plot defaults (`isoclineTheme`): dark background transparent (page provides
+Chart defaults (`isoclineTheme`): dark background transparent (page provides
 panel), ink #e6edf3 axis labels, muted #8b98a9 ticks, grid rgba(255,255,255,.07),
 history line: cyan; forecast: violet dashed; PI band: violet 15% opacity;
 anomaly spike: red, dip: #60a5fa; expected: amber dashed; changepoint rule:
@@ -542,4 +547,56 @@ autoChart(input: GenericSeries): AutoChartResult;   // TS-side dispatcher
 `categoryOutlierPlot(res)` (dot-per-category + IQR fences, outliers colored) ·
 `lowVariancePlot(values, res)` (line + mean band + cv annotation) ·
 `autoChartPlot(input, auto, opts?)` (dispatches to the right renderer,
-including the existing time-series plots).
+including the existing time-series plots). Each also has an `*Option` form
+(`correlationOption`, `majorityOption`, `categoryOutlierOption`,
+`lowVarianceOption`, `autoChartOption`) returning an `EChartsOption`.
+
+## 12. Time windows, anomaly explanations, auto-detect (v1.2)
+
+TS-only (no ABI change); types live in `packages/isocline/src/types.ts`.
+
+### Time window (post-result filter)
+
+`TimeWindow { lookback?: Duration; since?: TimeLike; now?: TimeLike | "latest"; lastPoints?: number }`
+— `AnomalyOptions extends TimeWindow`. `Duration = number (ms) | \`${number}${"ms"|"s"|"m"|"h"|"d"|"w"|"mo"|"y"}\``
+(`m` minutes; `mo`/`y` UTC calendar steps with day clamping). Detection
+always runs on the full series; only `AnomalyResult.anomalies` is filtered
+and `AnomalyResult.window = { from, to, lastPoints, total, kept }` is set.
+`lookback`/`since` without `t` → `IsoclineError("badParams")`. `now`
+defaults to `Date.now()`; `"latest"` = max(t). Implemented once in
+`window.ts` (`filterAnomalies`) and used by the wasm engine, the demo mock
+and `detect`.
+
+### Explanations
+
+`explainAnomalies(series, result, { name?, period?, changepoints?, formatTime? })`
+→ `AnomalyExplanation[]` aligned with `result.anomalies`: `headline`,
+`reasons[]` (method-specific "expected already includes trend/cycle"
+sentence, isolated vs sustained run, same-direction level shift at the
+start of a sustained run, series extreme), `text`, plus the structured
+facts (`severity` from score/threshold: < 1.5 low, < 2.5 medium, else high;
+`delta`, `deltaPct`, `run`, `levelShift`, `extreme`). Times format as
+`YYYY-MM-DD HH:MM UTC` unless `formatTime` is given. `isocline-plot`
+accepts them as `anomalyPlot(…, { explanations })` (types only).
+
+### `detect(engine, input, opts?) → DetectReport<K>`
+
+`input: ArrayLike<number> | GenericSeries | ReadonlyArray<Record<string, unknown>>`.
+Findings are the discriminated union `AnomalyFinding | FrequencyOutlierFinding | CategoryOutlierFinding`
+(each with `subject`, `measure`, `category`, `at`, `severity`, `score`,
+`threshold`, `summary`, `explanation`); `opts.kinds` narrows `K`.
+Summary formats: `Anomaly detected for <subject> at <time>: …`,
+`Frequency outlier detected for <category> at <bucket start>: …`,
+`Frequency outlier detected for <category>: …` (untimed),
+`Category outlier detected for <category>: …`.
+
+Dispatch: numeric columns → per-measure series anomalies (per category
+when a category and time exist) + `categoryOutlier` per measure when a
+category exists; no numeric columns + time → per-category bucketed event
+counts → anomalies kept only if `|count − expected| / √max(expected, 1) ≥ minPoissonZ` (default 3);
+category only → `categoryOutlier(agg: "count")`. The window filters
+timed findings after detection; category comparisons aggregate only rows
+inside it. Series < 8 finite points or engine errors go to `skipped`.
+Defaults: stl, auto bucket (coarsest of 1s/1m/5m/15m/1h/6h/1d/1w with
+≥ 100 buckets), 50 categories, IQR k 1.5 sum, context (seasonality +
+changepoints) on, sort by severity.

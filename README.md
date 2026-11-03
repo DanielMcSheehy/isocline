@@ -8,7 +8,7 @@
 
 An augurs-style toolkit: a dependency-free Rust forecasting & anomaly-detection
 core, compiled to a 240 KB (88 KB gzipped) WASM module with a zero-dependency
-TypeScript wrapper, an [Observable Plot](https://github.com/observablehq/plot)
+TypeScript wrapper, an [Apache ECharts](https://echarts.apache.org/)
 visualization layer, and an interactive demo.
 
 **[Architecture diagram, live](https://www.eternalchaos.xyz/isocline/)** ([local copy](docs/architecture.html)) · **[Full showcase](docs/SHOWCASE.md)**
@@ -45,6 +45,7 @@ rust core ──► wasm (flat C ABI) ──► TS engine ──► isocline-plo
 | Evaluation | Rolling-origin backtesting w/ PI coverage, rmse/mae/smape |
 | Tabular (non-temporal) | Pearson correlation, categorical majority, IQR category-outlier vs peers, low-variance flatness |
 | Auto-chart | Give it generic columns (`y`, `y2`, `categories`) - it picks the right analysis and explains why |
+| Auto-detect | `detect()` over arbitrary arrays/columns/records → typed anomaly / frequency-outlier / category-outlier findings, one-line summaries, plain-language "why", optional lookback window |
 
 ## Measured performance (wasm, single thread, M-series laptop)
 
@@ -69,7 +70,7 @@ PI coverage in [0.88, 1.0] over 200 realizations, and bitwise determinism.
 crates/isocline-core      algorithms - std-only Rust, zero deps (rayon optional)
 crates/isocline-wasm      flat-ABI wasm bindings (no wasm-bindgen)
 packages/isocline         npm "isocline" - zero-dep TS engine wrapper
-packages/isocline-plot    npm "isocline-plot" - Observable Plot marks/plots
+packages/isocline-plot    npm "isocline-plot" - ECharts options/plots
 packages/demo             interactive demo (Vite, vanilla TS)
 docs/                     ARCHITECTURE.md, ALGORITHMS.md
 CONTRACT.md               the normative cross-package contract
@@ -81,12 +82,12 @@ CONTRACT.md               the normative cross-package contract
 npm install          # workspaces
 npm run build        # wasm → isocline → isocline-plot → demo
 npm run dev          # demo at http://localhost:5173
-npm run test:smoke   # 30 contract checks against the real wasm
+npm run test:smoke   # 58 contract checks against the real wasm
 cargo test --workspace   # 80 Rust tests
 ```
 
 ```ts
-import { loadIsocline, genSeries } from "isocline";
+import { loadIsocline, genSeries, detect, explainAnomalies } from "isocline";
 import * as PP from "isocline-plot";
 
 const { y, t } = genSeries({ n: 720, period: 24 });  // seeded synthetic data
@@ -105,10 +106,17 @@ const flat = engine.lowVariance(throughput);                           // → { 
 // or just hand it whatever columns you have and ask for the chart
 const auto = engine.autoChart({ categories: devices, y: errorCounts }); // → kind + reason + result
 
+// backend-style: arbitrary records in, typed findings + one-line summaries out
+const report = detect(engine, rows, { lookback: "1mo" });              // only findings from the past month
+report.findings[0]?.summary; // "Anomaly detected for cpu · device-3 at 2026-11-02 04:00 UTC: spike, 84.9 vs ~48.0 expected (+77%)."
+const why = explainAnomalies({ y, t }, an);                            // plain-language "why" per anomaly
+const recent = engine.detectAnomalies({ y, t }, { lookback: "7d" });   // post-result time filter
+
 document.body.append(
   PP.forecastPlot({ y, t }, fc, { paths: true, showComponents: true }),
   PP.anomalyPlot({ y, t }, an),
 );
+const svg = PP.renderSVG(PP.backtestOption(bt));                       // SSR: same chart as an SVG string
 ```
 
 Server-side (scale up): use `isocline-core` directly from Rust with

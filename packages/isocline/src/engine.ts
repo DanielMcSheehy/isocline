@@ -1,5 +1,6 @@
 // High-level Isocline engine: typed API over the flat wasm ABI (CONTRACT §2/§3).
 import { Abi, OP, instantiate, defaultWasmBytes } from "./abi.js";
+import { filterAnomalies } from "./window.js";
 import {
   IsoclineError,
   type AnomalyOptions,
@@ -101,7 +102,7 @@ export class WasmIsocline implements Isocline {
     });
     const h = this.abi.call(OP.anomalies, cfg, series.y);
     const anomalies = Array.isArray(h.anomalies) ? (h.anomalies as Record<string, unknown>[]) : [];
-    return {
+    const result: AnomalyResult = {
       method: (h.method as AnomalyResult["method"]) ?? "stl",
       threshold: num(h.threshold, 3.5),
       anomalies: anomalies.map((a) => ({
@@ -114,6 +115,7 @@ export class WasmIsocline implements Isocline {
       scores: this.abi.channel(h, "scores"),
       expected: this.abi.channel(h, "expected"),
     };
+    return filterAnomalies(series, result, opts);
   }
 
   decompose(series: SeriesInput, opts: DecomposeOptions = {}): DecomposeResult {

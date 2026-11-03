@@ -1,6 +1,6 @@
 // Node smoke test: loads the real wasm engine and asserts contract invariants.
 // Run: npm run test:smoke  (from repo root, after npm run build:wasm + build:pythia→build:isocline)
-import { loadIsocline, genSeries } from "../dist/index.js";
+import { loadIsocline, genSeries, mulberry32, randn, detect, explainAnomalies, subtractDuration } from "../dist/index.js";
 
 let passed = 0;
 let failed = 0;
@@ -142,6 +142,56 @@ ok("engine version", eq(engine.version, "0.1.0"));
   const autoTs = engine.autoChart({ y: Array.from(gen.y), t: Array.from(gen.t) });
   ok("auto -> forecast on seasonal data", autoTs.kind === "forecast" || autoTs.kind === "anomalies", autoTs.kind);
   ok("auto gives a reason", typeof autoTs.reason === "string" && autoTs.reason.length > 10);
+}
+
+// ---- v1.2: time windows, explanations, auto-detect ----
+{
+  const latest = series.t[series.t.length - 1];
+  const full = engine.detectAnomalies(series);
+  const wk = engine.detectAnomalies(series, { lookback: "7d", now: "latest" });
+  const expectIdx = full.anomalies.filter((a) => series.t[a.index] >= latest - 7 * 86400e3).map((a) => a.index);
+  ok("lookback keeps exactly the in-window anomalies", JSON.stringify(wk.anomalies.map((a) => a.index)) === JSON.stringify(expectIdx) && expectIdx.length < full.anomalies.length, `${wk.anomalies.length}/${full.anomalies.length}`);
+  ok("lookback reports window totals", wk.window?.total === full.anomalies.length && wk.window?.kept === expectIdx.length && wk.scores.length === 720);
+  const last50 = engine.detectAnomalies({ y: series.y }, { lastPoints: 360 });
+  ok("lastPoints works without timestamps", last50.anomalies.every((a) => a.index >= 360) && last50.window?.lastPoints === 360);
+  let noT = null;
+  try { engine.detectAnomalies({ y: series.y }, { lookback: "7d" }); } catch (e) { noT = e; }
+  ok("lookback without t -> badParams", noT?.code === "badParams");
+  ok("1mo is calendar-aware and clamps", subtractDuration(Date.UTC(2026, 2, 31), "1mo") === Date.UTC(2026, 1, 28));
+
+  const ex = explainAnomalies(series, full, { name: "load", period: 24 });
+  ok("explanations align with anomalies", ex.length === full.anomalies.length && ex.every((x, i) => x.index === full.anomalies[i].index && x.text.includes(x.when) && x.reasons.length >= 2));
+
+  // records: 6 devices hourly cpu; device-5 runs hot (category outlier); device-3 spikes 20h before the end
+  const rng = mulberry32(7);
+  const rows = [];
+  const T0 = Date.UTC(2026, 9, 4);
+  for (let h = 0; h < 720; h++) for (let d = 0; d < 6; d++) {
+    rows.push({ timestamp: new Date(T0 + h * 3600e3).toISOString(), device: `device-${d}`, cpu: 40 + 10 * Math.sin((2 * Math.PI * h) / 24) + randn(rng) * 2 + (d === 5 ? 25 : 0) + (d === 3 && h === 700 ? 40 : 0) });
+  }
+  const spikeT = T0 + 700 * 3600e3;
+  const rep = detect(engine, rows, { lookback: "2d", now: "latest" });
+  const spike = rep.findings.find((f) => f.kind === "anomaly" && f.category === "device-3" && f.at.t === spikeT);
+  ok("detect finds injected device spike in window", spike !== undefined && spike.summary.startsWith("Anomaly detected for cpu · device-3 at 2026-11-02 04:00 UTC"), rep.summary);
+  ok("detect window excludes older anomalies", rep.findings.every((f) => f.at === null || f.at.t >= T0 + 719 * 3600e3 - 2 * 86400e3));
+  const old = detect(engine, rows, { kinds: ["anomaly"], lookback: "2d", now: spikeT - 86400e3 });
+  ok("detect window can exclude the spike", !old.findings.some((f) => f.at.t === spikeT) && old.findings.every((f) => f.kind === "anomaly"));
+  const cat = detect(engine, rows, { kinds: ["category_outlier"] });
+  ok("detect category outlier for hot device", cat.findings.length === 1 && cat.findings[0].category === "device-5" && cat.findings[0].direction === "high");
+
+  // events: three error codes, E42 bursts 40× at one instant
+  const ev = [];
+  const E0 = Date.UTC(2026, 9, 20);
+  for (let h = 0; h < 336; h++) for (const [code, rate] of [["E1", 5], ["E2", 2], ["E42", 1]]) {
+    const k = Math.max(0, Math.round(rate + randn(rng) * Math.sqrt(rate)));
+    for (let j = 0; j < k; j++) ev.push({ at: E0 + h * 3600e3 + j * 1000, code });
+  }
+  const burst = Date.UTC(2026, 9, 30, 13);
+  for (let j = 0; j < 40; j++) ev.push({ at: burst + j * 1000, code: "E42" });
+  const fr = detect(engine, ev, { fields: { time: "at" } });
+  const hit = fr.findings.find((f) => f.kind === "frequency_outlier" && f.category === "E42" && f.at?.t === burst);
+  ok("frequency outlier for burst bucket", hit !== undefined && hit.bucketMs === 3600e3 && hit.count >= 40, fr.summary);
+  ok("no frequency noise on steady codes", fr.findings.filter((f) => f.severity !== "low").every((f) => f.category === "E42"), fr.summary);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

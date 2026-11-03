@@ -1,8 +1,9 @@
 // Renders every isocline-plot visualization against mock results.
-import * as Plot from "@observablehq/plot";
+import { getInstanceByDom } from "echarts/core";
 import {
   forecastPlot,
-  forecastMarks,
+  forecastOption,
+  renderChart,
   anomalyPlot,
   decomposePlot,
   seasonalityPlot,
@@ -10,7 +11,6 @@ import {
   backtestPlot,
   backtestWinner,
   anomalySplit,
-  applyIsoclineCss,
   correlationPlot,
   correlationHeadline,
   majorityPlot,
@@ -18,6 +18,7 @@ import {
   lowVariancePlot,
   autoChartPlot,
   autoChartReason,
+  C,
 } from "../src/index.js";
 import {
   mockSeries,
@@ -34,7 +35,6 @@ import {
   mockAuto,
 } from "./mocks.js";
 
-applyIsoclineCss();
 const app = document.getElementById("app")!;
 const section = (title: string, el: HTMLElement, note = "") => {
   const h = document.createElement("h2");
@@ -53,21 +53,33 @@ section(
   "PI band + sample paths + trend/seasonal projection",
 );
 
-// composition example: reuse forecastMarks inside a fully custom Plot
-const { marks, plotOptions } = forecastMarks(series, forecast);
-const custom = Plot.plot({
-  ...plotOptions,
-  height: 240,
-  y: { ...plotOptions.y, label: "custom axis" },
-  marks: [...marks, Plot.text([{ x: (marks.length, 0), y: 0, label: "composed" }], { x: "x", y: "y", text: "label", fontSize: 12, textAnchor: "start", dx: 8, fill: "#fbbf24" })],
-} as Plot.PlotOptions);
-custom.classList.add("isocline-plot");
-section("forecast · composed", custom as HTMLElement, "forecastMarks inside a custom Plot.plot");
+// composition example: render forecastOption, then merge extra option
+// pieces into the live instance with echarts' setOption.
+const custom = renderChart(forecastOption(series, forecast, { yLabel: "custom axis" }), { height: 240 });
+const lastX = Number(series.t![series.y.length - 1]);
+getInstanceByDom(custom)!.setOption({
+  series: [
+    {
+      id: "annotation",
+      type: "scatter",
+      data: [[lastX, Number(series.y[series.y.length - 1])]],
+      symbolSize: 9,
+      itemStyle: { color: C.amber },
+      label: { show: true, position: "left", formatter: "composed", color: C.amber, fontSize: 12 },
+    },
+  ],
+});
+section("forecast · composed", custom, "forecastOption + setOption merge");
 
 const anomalies = mockAnomalies(series);
 section(
   "anomalies",
-  anomalyPlot(series, anomalies),
+  anomalyPlot(series, anomalies, {
+    explanations: anomalies.anomalies.slice(0, 3).map((a) => ({
+      index: a.index,
+      text: `Sample #${a.index} deviates from the rolling-median baseline by ${a.score.toFixed(1)} robust σ; long explanation text wraps inside the tooltip at about 320px.`,
+    })),
+  }),
   `split ${JSON.stringify(anomalySplit(anomalies))}`,
 );
 section("decompose", decomposePlot(series, mockDecompose(series)));

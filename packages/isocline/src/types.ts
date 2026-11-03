@@ -45,7 +45,7 @@ export interface ForecastResult {
 
 export type AnomalyMethod = "stl" | "madz" | "iqr" | "ewma";
 
-export interface AnomalyOptions {
+export interface AnomalyOptions extends TimeWindow {
   method?: AnomalyMethod; // default "stl"
   period?: number | "auto"; // default "auto"; used by stl/madz/ewma
   threshold?: number; // default: stl/madz 3.5 (modified z), iqr 1.5 (k), ewma 3.0 (L)
@@ -64,9 +64,10 @@ export interface Anomaly {
 export interface AnomalyResult {
   method: AnomalyMethod;
   threshold: number;
-  anomalies: Anomaly[]; // sorted by index
+  anomalies: Anomaly[]; // sorted by index; only those inside `window` when one was requested
   scores: Float64Array; // length n, signed score (positive = above expected)
   expected: Float64Array; // length n
+  window?: AppliedWindow; // present when a TimeWindow (lookback/since/lastPoints) was applied
 }
 
 export interface DecomposeOptions {
@@ -253,4 +254,161 @@ export interface AutoChartResult {
   forecast?: ForecastResult;
   anomalies?: AnomalyResult;
   series?: SeriesInput; // echoed time-series input for time-series kinds
+}
+
+// --- v1.2: time windows, anomaly explanations, auto-detect (CONTRACT §12) ---
+
+export type DurationUnit = "ms" | "s" | "m" | "h" | "d" | "w" | "mo" | "y";
+/** e.g. "90s", "15m", "24h", "7d", "2w", "1mo", "1y". `m` = minutes, `mo` = calendar months. */
+export type DurationString = `${number}${DurationUnit}`;
+/** Milliseconds, or a DurationString. */
+export type Duration = number | DurationString;
+/** Epoch milliseconds, a Date, or an ISO-8601 string. */
+export type TimeLike = number | Date | string;
+
+/** Post-result filter: detection always runs on the full history (so seasonality
+ *  and baselines stay intact); only the reported findings are restricted. */
+export interface TimeWindow {
+  /** Keep results in [now − lookback, now]. Needs timestamps. */
+  lookback?: Duration;
+  /** Keep results at or after this instant. Needs timestamps. Combined with lookback → the later bound wins. */
+  since?: TimeLike;
+  /** Reference "now" for lookback. Default: wall clock (Date.now()). "latest" = the newest timestamp in the data. */
+  now?: TimeLike | "latest";
+  /** Keep results among the last N samples. Works without timestamps. */
+  lastPoints?: number;
+}
+
+export interface AppliedWindow {
+  from: number | null; // epoch ms, inclusive
+  to: number | null; // epoch ms, inclusive
+  lastPoints: number | null;
+  total: number; // results before filtering
+  kept: number; // results after filtering
+}
+
+export type Severity = "low" | "medium" | "high";
+
+export interface ExplainOptions {
+  name?: string; // subject used in sentences, default "series"
+  period?: number | null; // seasonal period the detector used (wording only)
+  changepoints?: ChangepointResult; // level shifts for "coincides with a shift" context
+  formatTime?: (ms: number) => string; // default formatTimestamp (UTC)
+}
+
+export interface AnomalyExplanation {
+  index: number;
+  t: number | null;
+  when: string; // formatted time, or "index N"
+  direction: "spike" | "dip";
+  severity: Severity;
+  observed: number;
+  expected: number;
+  delta: number; // observed − expected
+  deltaPct: number | null; // delta / |expected|, null when expected ≈ 0
+  score: number;
+  threshold: number;
+  run: { start: number; end: number; length: number }; // consecutive flagged points, same direction
+  levelShift: { index: number; when: string; meanBefore: number; meanAfter: number } | null;
+  extreme: "max" | "min" | null; // global max/min of the series
+  headline: string; // one line: what happened
+  reasons: string[]; // plain-language why, most important first
+  text: string; // headline + reasons
+}
+
+export type FindingKind = "anomaly" | "frequency_outlier" | "category_outlier";
+
+export interface FindingAt {
+  index: number; // index in the analyzed series (bucket index for frequency outliers)
+  t: number | null; // epoch ms when timestamped
+  label: string; // formatted time or "index N"
+}
+
+interface FindingBase {
+  subject: string; // e.g. "cpu", "cpu · device-3", "error_code=E42"
+  measure: string | null;
+  category: string | null;
+  severity: Severity;
+  score: number; // detector score (|modified z|, IQR distance, …)
+  threshold: number;
+  summary: string; // "Anomaly detected for cpu at 2026-10-14 13:00 UTC: spike, 182 vs ~120 expected (+52%)"
+  explanation: string; // why, in plain language
+}
+
+export interface AnomalyFinding extends FindingBase {
+  kind: "anomaly";
+  at: FindingAt;
+  direction: "spike" | "dip";
+  observed: number;
+  expected: number;
+  method: AnomalyMethod;
+  details: AnomalyExplanation;
+}
+
+export interface FrequencyOutlierFinding extends FindingBase {
+  kind: "frequency_outlier";
+  category: string;
+  at: FindingAt | null; // null when events carry no timestamps (whole-dataset rarity/dominance)
+  direction: "high" | "low";
+  count: number;
+  expected: number; // expected count per bucket (timed) or median category count (untimed)
+  bucketMs: number | null;
+  details: AnomalyExplanation | null;
+}
+
+export interface CategoryOutlierFinding extends FindingBase {
+  kind: "category_outlier";
+  category: string;
+  at: null;
+  direction: "high" | "low";
+  value: number;
+  agg: CategoryAgg;
+  fence: number; // the fence that was crossed
+  median: number; // midpoint of the IQR band, for context
+}
+
+export type Finding = AnomalyFinding | FrequencyOutlierFinding | CategoryOutlierFinding;
+
+/** Arbitrary input for `detect`: a bare numeric array, column-oriented
+ *  GenericSeries ({ y, y2?, categories?, t? }), or an array of records. */
+export type DetectInput = ArrayLike<number> | GenericSeries | ReadonlyArray<Record<string, unknown>>;
+
+export interface RowFields {
+  time?: string; // default: inferred (Date / ISO string / epoch-ms column, or a name like "t", "time", "timestamp")
+  value?: string | readonly string[]; // default: every numeric column
+  category?: string; // default: first string column with 2..n/2 distinct values
+}
+
+export interface DetectOptions<K extends FindingKind = FindingKind> extends TimeWindow {
+  kinds?: readonly K[]; // default all
+  name?: string; // subject for unnamed numeric input, default "series"
+  fields?: RowFields;
+  anomaly?: Omit<AnomalyOptions, keyof TimeWindow>; // default { method: "stl" }
+  frequency?: {
+    bucket?: Duration; // default: auto (coarsest of 1s…1w giving ≥ 100 buckets)
+    maxCategories?: number; // default 50 most frequent
+    minPoissonZ?: number; // default 3: |count − expected| / √expected must also clear this
+  };
+  categories?: { agg?: CategoryAgg; factor?: number }; // default sum, 1.5
+  context?: boolean; // default true: run seasonality + changepoints for richer explanations
+  minSeverity?: Severity; // default "low" (everything)
+  sort?: "severity" | "recent"; // default "severity"
+  limit?: number; // default: no limit
+  formatTime?: (ms: number) => string; // default formatTimestamp (UTC)
+}
+
+export interface AnalyzedTarget {
+  subject: string;
+  kind: "series" | "frequency" | "categories";
+  points: number;
+}
+
+export interface DetectReport<K extends FindingKind = FindingKind> {
+  headline: string; // "3 anomalies and 1 frequency outlier in the last 30d" / "No anomalies detected …"
+  summary: string; // headline + one line per finding
+  findings: Extract<Finding, { kind: K }>[];
+  counts: Record<FindingKind, number>;
+  window: AppliedWindow | null;
+  analyzed: AnalyzedTarget[];
+  skipped: { subject: string; reason: string }[];
 }

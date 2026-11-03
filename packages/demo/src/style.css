@@ -438,6 +438,39 @@ button:focus-visible {
   width: 100%;
 }
 
+.explanations {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.explanation {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--muted);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.explanation.sev-medium {
+  border-left-color: var(--amber);
+}
+
+.explanation.sev-high {
+  border-left-color: var(--red);
+}
+
+.explanation-head {
+  font: 600 12px var(--mono);
+  color: var(--ink);
+}
+
+.explanation-why {
+  margin-top: 4px;
+  font: 400 12.5px/1.5 var(--sans);
+  color: var(--muted);
+}
+
 .plot-area .placeholder {
   color: var(--muted);
   font: 400 12px var(--mono);

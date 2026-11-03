@@ -1,5 +1,6 @@
 // Shared DOM/format helpers for the demo tabs.
 import type { Isocline } from "isocline";
+import { disposePlots } from "isocline-plot";
 import { useEngine } from "./engine.js";
 
 export function fmtNum(x: number | null | undefined, digits = 3): string {
@@ -90,7 +91,9 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+/** Empty `node`, disposing any ECharts instances mounted inside it first. */
 export function clearNode(node: Element): void {
+  disposePlots(node);
   node.replaceChildren();
 }
 

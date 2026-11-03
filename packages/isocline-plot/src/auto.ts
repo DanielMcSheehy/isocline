@@ -1,22 +1,27 @@
 // Auto-chart dispatcher (CONTRACT §11): maps an AutoChartResult onto the right
-// renderer. Import direction is one-way: auto → tabular/forecast/anomaly;
+// option builder. Import direction is one-way: auto → tabular/forecast/anomaly;
 // nothing here is imported by those modules (no cycles).
-import * as Plot from "@observablehq/plot";
+import type { EChartsOption } from "echarts";
 import type { GenericSeries, AutoChartResult, SeriesInput } from "isocline";
-import { C, isoclineTheme, applyIsoclineCss, fmt } from "./theme.js";
-import { forecastPlot, type ForecastVizOptions } from "./forecast.js";
-import { anomalyPlot, type AnomalyVizOptions } from "./anomaly.js";
+import { C, isoclineTheme, grid, tooltip, xAxis, yAxis, fmt, fmtTick } from "./theme.js";
+import { tipList, type TipParams } from "./util.js";
+import { renderChart } from "./render.js";
+import { forecastOption, type ForecastVizOptions } from "./forecast.js";
+import { anomalyOption, type AnomalyVizOptions } from "./anomaly.js";
 import {
-  correlationPlot,
-  majorityPlot,
-  categoryOutlierPlot,
-  lowVariancePlot,
+  correlationOption,
+  majorityOption,
+  categoryOutlierOption,
+  lowVarianceOption,
+  horizontalBarsOption,
   type TabularVizOptions,
 } from "./tabular.js";
 
 export type AutoChartVizOptions = ForecastVizOptions &
   AnomalyVizOptions &
   TabularVizOptions;
+
+const HIST_BINS = 24;
 
 /** Explanation chip text for the rendered auto chart. */
 export function autoChartReason(auto: AutoChartResult): string {
@@ -49,102 +54,116 @@ interface DistBar {
   value: number;
 }
 
-/** "distribution" for categorical input: majorityPlot-shaped bars of the
- *  per-category aggregates (from auto.categoryOutlier), cyan, fmt labels. */
-function distributionBarsMarks(
-  bars: DistBar[],
-  opts: AutoChartVizOptions,
-): { marks: Plot.Markish[]; plotOptions: Partial<Plot.PlotOptions> } {
-  const marks: Plot.Markish[] = [
-    Plot.barX(bars, { x: "value", y: "label", fill: C.cyan }),
-    Plot.text(bars, {
-      x: "value",
-      y: "label",
-      text: (d: DistBar) => fmt(d.value),
-      textAnchor: "start",
-      dx: 5,
-      fill: C.ink,
-      fontSize: 10,
+/** Categories behind a "distribution" chart (per-category aggregates from auto.categoryOutlier). */
+function distBars(auto: AutoChartResult): DistBar[] {
+  return (auto.categoryOutlier?.categories ?? []).map((c) => ({ label: c.label, value: Number(c.value) }));
+}
+
+/** "distribution" for categorical input: majority-shaped bars of the per-category aggregates, cyan, fmt labels. */
+function distributionBarsOption(bars: DistBar[], opts: AutoChartVizOptions): EChartsOption {
+  return horizontalBarsOption(
+    bars.map((b) => ({ ...b, color: C.cyan })),
+    { xName: opts.yLabel ?? "value", xFormatter: fmtTick, label: fmt },
+  );
+}
+
+/** "distribution" for pure numeric input: equal-width histogram (24 bins), cyan. */
+function distributionHistogramOption(values: number[], opts: AutoChartVizOptions): EChartsOption {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of values) {
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+  if (!values.length) {
+    lo = 0;
+    hi = 1;
+  }
+  const width = hi > lo ? (hi - lo) / HIST_BINS : 1;
+  const counts = new Array<number>(HIST_BINS).fill(0);
+  for (const v of values) counts[Math.min(HIST_BINS - 1, Math.floor((v - lo) / width))]! += 1;
+  const edges = Array.from({ length: HIST_BINS }, (_, k) => [lo + k * width, lo + (k + 1) * width] as const);
+  // Decimals resolving the bin width (fmt's 3 sig digits would merge the bins of a narrow range).
+  const dec = Math.max(0, Math.min(6, 1 - Math.floor(Math.log10(width))));
+  const edgeLabel = (v: number) => fmtTick(Number(v.toFixed(dec)));
+  return {
+    ...isoclineTheme,
+    grid: grid(),
+    tooltip: tooltip({
+      trigger: "item",
+      formatter: (p: TipParams | TipParams[]) =>
+        tipList(p)
+          .map((it) => {
+            const e = edges[it.dataIndex];
+            return e ? `[${edgeLabel(e[0])}, ${edgeLabel(e[1])})<br/>count ${it.value}` : "";
+          })
+          .join(""),
     }),
-  ];
-  const max = bars.reduce((m, b) => Math.max(m, b.value), 0);
-  const plotOptions: Partial<Plot.PlotOptions> = {
-    ...isoclineTheme,
-    marginLeft: Math.max(isoclineTheme.marginLeft ?? 0, 92),
-    marginRight: Math.max(isoclineTheme.marginRight ?? 0, 48),
-    x: { ...isoclineTheme.x, nice: true, domain: [0, max > 0 ? max * 1.08 : 1], label: opts.yLabel ?? "value", grid: true },
-    y: { ...isoclineTheme.y, grid: false, domain: bars.map((b) => b.label) },
-    height: opts.height ?? 24 + 26 * bars.length,
-  };
-  if (opts.width) plotOptions.width = opts.width;
-  return { marks, plotOptions };
-}
-
-/** "distribution" for pure numeric input: binned histogram (24 bins), cyan. */
-function distributionHistogram(
-  values: number[],
-  opts: AutoChartVizOptions,
-): { marks: Plot.Markish[]; plotOptions: Partial<Plot.PlotOptions> } {
-  const data = values.map((y, i) => ({ i, y }));
-  const marks: Plot.Markish[] = [
-    Plot.rectY(
-      data,
+    xAxis: xAxis({
+      type: "category",
+      name: opts.xLabel ?? "value",
+      data: edges.map((e) => edgeLabel((e[0] + e[1]) / 2)),
+      axisTick: { alignWithLabel: true },
+    }),
+    yAxis: yAxis({ type: "value", name: opts.yLabel ?? "count", min: 0, scale: false }),
+    series: [
       {
-        ...Plot.binX({ y: "count" }, { x: "y", thresholds: 24 }),
-        fill: C.cyan,
-        fillOpacity: 0.85,
+        type: "bar",
+        name: "count",
+        data: counts,
+        barCategoryGap: "6%",
+        itemStyle: { color: C.cyan, opacity: 0.85 },
       },
-    ),
-  ];
-  const plotOptions: Partial<Plot.PlotOptions> = {
-    ...isoclineTheme,
-    x: { ...isoclineTheme.x, nice: true, label: opts.xLabel ?? "value" },
-    y: { ...isoclineTheme.y, label: opts.yLabel ?? "count" },
-    height: opts.height ?? 320,
+    ],
   };
-  if (opts.width) plotOptions.width = opts.width;
-  return { marks, plotOptions };
 }
 
-function distributionChart(input: GenericSeries, auto: AutoChartResult, opts: AutoChartVizOptions): HTMLElement {
-  const cats = auto.categoryOutlier?.categories;
-  const bars: DistBar[] = (cats ?? []).map((c) => ({ label: c.label, value: Number(c.value) }));
-  const spec = bars.length
-    ? distributionBarsMarks(bars, opts)
-    : distributionHistogram(finiteValues(input.y), opts);
-  const fig = Plot.plot({ ...spec.plotOptions, marks: spec.marks } as Plot.PlotOptions);
-  fig.classList.add("isocline-plot");
-  return fig as HTMLElement;
+/** Chosen option plus its bar-row count (bar charts grow with their rows). */
+interface AutoPick {
+  option: EChartsOption;
+  rows: number | null;
+}
+
+function pick(input: GenericSeries, auto: AutoChartResult, opts: AutoChartVizOptions): AutoPick {
+  const series = auto.series ?? asSeries(input);
+  switch (auto.kind) {
+    case "forecast":
+      if (auto.forecast && series) return { option: forecastOption(series, auto.forecast, opts), rows: null };
+      break;
+    case "anomalies":
+      if (auto.anomalies && series) return { option: anomalyOption(series, auto.anomalies, opts), rows: null };
+      break;
+    case "correlation":
+      if (auto.correlation) return { option: correlationOption(input.y ?? [], input.y2 ?? [], auto.correlation, opts), rows: null };
+      break;
+    case "majority":
+      if (auto.majority) return { option: majorityOption(auto.majority, opts), rows: auto.majority.counts.length };
+      break;
+    case "category_outlier":
+      if (auto.categoryOutlier) return { option: categoryOutlierOption(auto.categoryOutlier, opts), rows: null };
+      break;
+    case "low_variance":
+      if (auto.lowVariance && input.y !== undefined) return { option: lowVarianceOption(input.y, auto.lowVariance, opts), rows: null };
+      break;
+    case "distribution":
+    default:
+      break;
+  }
+  // "distribution", or missing pieces for the requested kind — fall back to
+  // the distribution chart of whatever numeric data is available.
+  const bars = distBars(auto);
+  return bars.length
+    ? { option: distributionBarsOption(bars, opts), rows: bars.length }
+    : { option: distributionHistogramOption(finiteValues(input.y), opts), rows: null };
+}
+
+/** Option for an auto-chart: dispatch on auto.kind to the matching family; never throws. */
+export function autoChartOption(input: GenericSeries, auto: AutoChartResult, opts: AutoChartVizOptions = {}): EChartsOption {
+  return pick(input, auto, opts).option;
 }
 
 /** Render an auto-chart: dispatch on auto.kind to the matching plot family. */
 export function autoChartPlot(input: GenericSeries, auto: AutoChartResult, opts: AutoChartVizOptions = {}): HTMLElement {
-  applyIsoclineCss();
-  const series = auto.series ?? asSeries(input);
-  switch (auto.kind) {
-    case "forecast":
-      if (auto.forecast && series) return forecastPlot(series, auto.forecast, opts);
-      break;
-    case "anomalies":
-      if (auto.anomalies && series) return anomalyPlot(series, auto.anomalies, opts);
-      break;
-    case "correlation":
-      if (auto.correlation) return correlationPlot(input.y ?? [], input.y2 ?? [], auto.correlation, opts);
-      break;
-    case "majority":
-      if (auto.majority) return majorityPlot(auto.majority, opts);
-      break;
-    case "category_outlier":
-      if (auto.categoryOutlier) return categoryOutlierPlot(auto.categoryOutlier, opts);
-      break;
-    case "low_variance":
-      if (auto.lowVariance && input.y !== undefined) return lowVariancePlot(input.y, auto.lowVariance, opts);
-      break;
-    case "distribution":
-    default:
-      return distributionChart(input, auto, opts);
-  }
-  // Missing pieces for the requested kind — fall back to the distribution
-  // chart of whatever numeric data is available (never throws).
-  return distributionChart(input, auto, opts);
+  const { option, rows } = pick(input, auto, opts);
+  return renderChart(option, { width: opts.width, height: opts.height ?? (rows === null ? 320 : 44 + 26 * rows) });
 }

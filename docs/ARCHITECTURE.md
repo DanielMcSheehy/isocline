@@ -11,7 +11,7 @@ flowchart TD
     B["crates/isocline-wasm<br/>cdylib, flat C ABI<br/>bump arena + serde_json configs"]
     C["packages/isocline/src/abi.ts<br/>wasm loader + memory marshalling"]
     D["packages/isocline/src/engine.ts<br/>typed Isocline API"]
-    E1["packages/isocline-plot<br/>Observable Plot marks/plots<br/>(types only, no runtime dep)"]
+    E1["packages/isocline-plot<br/>Apache ECharts options/plots<br/>(types only, no runtime dep)"]
     E2["packages/demo<br/>Vite site<br/>(types only + real loader)"]
 
     A -->|"called via safe wrappers"| B

@@ -1,28 +1,28 @@
-// isocline-plot — Observable Plot visualization layer for isocline results.
+// isocline-plot — Apache ECharts visualization layer for isocline results.
 // Two API forms per family (CONTRACT §6):
-//   *Marks(...)  → { marks: Plot.Markish[], plotOptions } for composition
-//   *Plot(...)   → rendered HTMLElement via Plot.plot
-import * as Plot from "@observablehq/plot";
+//   *Option(...) → EChartsOption for composition (setOption / renderChart / renderSVG)
+//   *Plot(...)   → mounted HTMLElement (div.isocline-plot) via renderChart
 
 export * from "./theme.js";
-export * from "./util.js";
-export { forecastMarks, forecastPlot, type ForecastVizOptions, type MarkSpec } from "./forecast.js";
-export { anomalyMarks, anomalyPlot, anomalySplit, type AnomalyVizOptions } from "./anomaly.js";
-export { decomposePlot, type DecomposeVizOptions } from "./decompose.js";
-export { seasonalityPlot, seasonalityCandidates, type SeasonalityVizOptions } from "./seasonality.js";
-export { changepointMarks, changepointPlot, type ChangepointVizOptions } from "./changepoint.js";
-export { backtestPlot, backtestWinner, type BacktestVizOptions } from "./backtest.js";
+export { toPoints, xOf, seriesXAxis, stepOf, futureX, isArray, type Pt, type IsoclineSeriesOption } from "./util.js";
+export { registerECharts, renderChart, disposePlots, renderSVG, type RenderChartOptions } from "./render.js";
+export { forecastOption, forecastPlot, type ForecastVizOptions } from "./forecast.js";
+export { anomalyOption, anomalyPlot, anomalySplit, type AnomalyVizOptions } from "./anomaly.js";
+export { decomposeOption, decomposePlot, decomposeHeight, type DecomposeVizOptions } from "./decompose.js";
+export { seasonalityOption, seasonalityPlot, seasonalityCandidates, type SeasonalityVizOptions } from "./seasonality.js";
+export { changepointOption, changepointPlot, type ChangepointVizOptions } from "./changepoint.js";
+export { backtestOption, backtestPlot, backtestWinner, type BacktestVizOptions } from "./backtest.js";
 export {
-  correlationMarks,
+  correlationOption,
   correlationPlot,
   correlationHeadline,
-  majorityMarks,
+  majorityOption,
   majorityPlot,
   majorityBars,
-  categoryOutlierMarks,
+  categoryOutlierOption,
   categoryOutlierPlot,
   categoryRows,
-  lowVarianceMarks,
+  lowVarianceOption,
   lowVariancePlot,
   lowVarianceHeadline,
   variancePoints,
@@ -31,11 +31,4 @@ export {
   type CategoryRow,
   type VariancePoint,
 } from "./tabular.js";
-export { autoChartPlot, autoChartReason, type AutoChartVizOptions } from "./auto.js";
-
-/** Thin wrapper: theme-first Plot.plot. */
-export function plot(spec: Partial<Plot.PlotOptions> = {}): HTMLElement {
-  const fig = Plot.plot(spec);
-  fig.classList.add("isocline-plot");
-  return fig as HTMLElement;
-}
+export { autoChartOption, autoChartPlot, autoChartReason, type AutoChartVizOptions } from "./auto.js";

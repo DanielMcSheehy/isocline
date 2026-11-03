@@ -42,7 +42,7 @@ export function mountSeasonality(root: HTMLElement): () => Promise<void> {
       clearNode(plotArea);
       plotArea.append(
         seasonalityPlot(res, {
-          width: Math.max(320, Math.floor((plotArea.clientWidth - 30) / 2)),
+          width: Math.max(320, plotArea.clientWidth - 20),
           height: 300,
         }),
       );

@@ -15,9 +15,11 @@ scale-up path. Interactive version: [architecture.html](architecture.html).
 
 ## Forecast
 
-Point forecast with 95% bootstrap prediction intervals. Auto model selection
-resolved `stl_ets` with detected period 24; metrics chips show one-step
-rmse / mae / smape.
+Point forecast with 95% bootstrap prediction intervals, rendered with Apache
+ECharts. The chart opens on the recent history (3 × horizon) so the forecast
+is readable; drag to pan back, ctrl+wheel / pinch to zoom. Auto model
+selection resolved `stl_ets` with detected period 24; metrics chips show
+one-step rmse / mae / smape.
 
 ![forecast with prediction interval band](screenshots/forecast.png)
 
@@ -31,6 +33,9 @@ projected trend (amber) and seasonal component (green).
 Robust-STL residual scoring. Injected events are flagged as spikes (red ▲) and
 dips (blue ▼) against the amber expected-value line; the stats row scores the
 detector against the generator's ground truth (precision / recall chips).
+Below the chart, the most severe points are explained in plain language
+(`explainAnomalies`), and the lookback selector filters results to a recent
+window without changing detection.
 
 ![anomalies with ground-truth scoring](screenshots/anomalies.png)
 
@@ -57,7 +62,7 @@ detected shift.
 ## Backtest
 
 Rolling-origin evaluation of four models × three folds, sortable leaderboard
-plus the metric heatmap. `stl_ets` wins on this series.
+plus the metric heatmap. `ets` wins on this series.
 
 ![backtest leaderboard](screenshots/backtest.png)
 
